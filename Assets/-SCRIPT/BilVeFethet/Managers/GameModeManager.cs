@@ -332,15 +332,23 @@ namespace BilVeFethet.Managers
             if (!string.IsNullOrEmpty(gameSceneName))
             {
                 var asyncLoad = SceneManager.LoadSceneAsync(gameSceneName);
+
+                // Sahne yüklenemezse hata logla ve çık
+                if (asyncLoad == null)
+                {
+                    Debug.LogError($"[GameModeManager] Failed to load scene: {gameSceneName}. Make sure the scene is added to Build Settings.");
+                    yield break;
+                }
+
                 asyncLoad.allowSceneActivation = false;
-                
+
                 while (asyncLoad.progress < 0.9f)
                 {
                     yield return null;
                 }
-                
+
                 asyncLoad.allowSceneActivation = true;
-                
+
                 yield return new WaitUntil(() => asyncLoad.isDone);
             }
             
