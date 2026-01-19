@@ -123,9 +123,17 @@ namespace BilVeFethet.Managers
             }
             else
             {
+                // Auth yoksa veya giriş yapılmamışsa - Geliştirme modunda doğrudan menüyü göster
+                // Production'da auth zorunlu olacak
+                #if UNITY_EDITOR
+                Debug.Log("[MainMenuManager] Auth yok veya giriş yapılmamış - Geliştirme modunda menü gösteriliyor");
+                ShowAuthContainer(false);
+                ShowMainMenu();
+                #else
                 // Giriş yapılmamış - Auth UI göster
                 ShowAuthContainer(true);
                 HideAllPanels();
+                #endif
             }
         }
 

@@ -12,6 +12,16 @@ namespace BilVeFethet.Utils
         private static readonly object _lock = new object();
         private static bool _applicationIsQuitting;
 
+        /// <summary>
+        /// Editor'da play mode başladığında static değişkenleri sıfırla
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics()
+        {
+            _instance = null;
+            _applicationIsQuitting = false;
+        }
+
         public static T Instance
         {
             get

@@ -26,6 +26,7 @@ namespace BilVeFethet.Data
         public float correctValue;           // Doğru sayısal değer
         public float tolerance;              // Kabul edilebilir hata payı
         public string valueUnit;             // Birim (yıl, km, kg vb.)
+        public bool allowNegative;           // Negatif değer girişine izin ver
         
         // Joker kullanımı sonuçları (yerel hesaplama için)
         [NonSerialized] public List<int> eliminatedOptions;  // %50 jokeri ile elenen seçenekler
