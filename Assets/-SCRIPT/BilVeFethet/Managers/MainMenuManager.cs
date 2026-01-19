@@ -8,11 +8,14 @@ using BilVeFethet.Data;
 using BilVeFethet.Enums;
 using BilVeFethet.Events;
 using BilVeFethet.Utils;
+using BilVeFethet.Auth;
+using BilVeFethet.Auth.UI;
 
 namespace BilVeFethet.Managers
 {
     /// <summary>
     /// Ana Menü Manager - Ana sayfa ve navigasyon yönetimi
+    /// Giriş akışı: Auth (Login/Register) -> MainMenu -> PlayMode -> Game
     /// </summary>
     public class MainMenuManager : Singleton<MainMenuManager>
     {
@@ -28,6 +31,10 @@ namespace BilVeFethet.Managers
         [SerializeField] private GameObject settingsPanel;
         [SerializeField] private GameObject shopPanel;
         [SerializeField] private GameObject matchmakingPanel;
+
+        [Header("Auth Panelleri")]
+        [SerializeField] private GameObject authContainer;
+        [SerializeField] private AuthUIManager authUIManager;
         
         [Header("Ana Menü UI")]
         [SerializeField] private TextMeshProUGUI playerNameText;
@@ -90,13 +97,68 @@ namespace BilVeFethet.Managers
         {
             base.Awake();
         }
-        
+
         private void Start()
         {
             SubscribeToEvents();
-            RefreshPlayerInfo();
-            RefreshLeaderboardPreview();
-            ShowMainMenu();
+            CheckAuthStateAndInitialize();
+        }
+
+        /// <summary>
+        /// Auth durumunu kontrol et ve UI'ı başlat
+        /// </summary>
+        private void CheckAuthStateAndInitialize()
+        {
+            // Auth durumunu kontrol et
+            if (AuthManager.Instance != null && AuthManager.Instance.IsLoggedIn)
+            {
+                // Giriş yapılmış - Ana menüyü göster
+                ShowAuthContainer(false);
+                RefreshPlayerInfo();
+                RefreshLeaderboardPreview();
+                ShowMainMenu();
+
+                // Profil yükle
+                _ = ProfileManager.Instance?.LoadCurrentProfileAsync();
+            }
+            else
+            {
+                // Giriş yapılmamış - Auth UI göster
+                ShowAuthContainer(true);
+                HideAllPanels();
+            }
+        }
+
+        /// <summary>
+        /// Auth container göster/gizle
+        /// </summary>
+        private void ShowAuthContainer(bool show)
+        {
+            if (authContainer != null)
+                authContainer.SetActive(show);
+
+            if (authUIManager != null && show)
+                authUIManager.ShowAuthUI();
+            else if (authUIManager != null)
+                authUIManager.HideAuthUI();
+        }
+
+        /// <summary>
+        /// Tüm panelleri gizle
+        /// </summary>
+        private void HideAllPanels()
+        {
+            SetPanelActive(mainMenuPanel, false);
+            SetPanelActive(playModePanel, false);
+            SetPanelActive(lobbyBrowserPanel, false);
+            SetPanelActive(lobbyRoomPanel, false);
+            SetPanelActive(createLobbyPanel, false);
+            SetPanelActive(joinLobbyPanel, false);
+            SetPanelActive(leaderboardPanel, false);
+            SetPanelActive(profilePanel, false);
+            SetPanelActive(settingsPanel, false);
+            SetPanelActive(shopPanel, false);
+            SetPanelActive(matchmakingPanel, false);
         }
         
         private void OnDestroy()
@@ -137,6 +199,28 @@ namespace BilVeFethet.Managers
             // GameEvents
             GameEvents.OnGameFound += HandleGameFound;
             GameEvents.OnPlayerLevelUp += HandleLevelUp;
+
+            // Auth Events
+            if (AuthManager.Instance != null)
+            {
+                AuthManager.Instance.OnLoginCompleted += HandleAuthLogin;
+                AuthManager.Instance.OnRegisterCompleted += HandleAuthRegister;
+                AuthManager.Instance.OnLogoutCompleted += HandleAuthLogout;
+            }
+
+            // Profile Events
+            if (ProfileManager.Instance != null)
+            {
+                ProfileManager.Instance.OnProfileLoaded += HandleProfileLoaded;
+                ProfileManager.Instance.OnProfileUpdated += HandleProfileUpdated;
+            }
+
+            // AuthUIManager Events
+            if (authUIManager != null)
+            {
+                authUIManager.OnLoginSuccess += HandleUILoginSuccess;
+                authUIManager.OnRegisterSuccess += HandleUIRegisterSuccess;
+            }
         }
         
         private void UnsubscribeFromEvents()
@@ -166,6 +250,28 @@ namespace BilVeFethet.Managers
             
             GameEvents.OnGameFound -= HandleGameFound;
             GameEvents.OnPlayerLevelUp -= HandleLevelUp;
+
+            // Auth Events
+            if (AuthManager.Instance != null)
+            {
+                AuthManager.Instance.OnLoginCompleted -= HandleAuthLogin;
+                AuthManager.Instance.OnRegisterCompleted -= HandleAuthRegister;
+                AuthManager.Instance.OnLogoutCompleted -= HandleAuthLogout;
+            }
+
+            // Profile Events
+            if (ProfileManager.Instance != null)
+            {
+                ProfileManager.Instance.OnProfileLoaded -= HandleProfileLoaded;
+                ProfileManager.Instance.OnProfileUpdated -= HandleProfileUpdated;
+            }
+
+            // AuthUIManager Events
+            if (authUIManager != null)
+            {
+                authUIManager.OnLoginSuccess -= HandleUILoginSuccess;
+                authUIManager.OnRegisterSuccess -= HandleUIRegisterSuccess;
+            }
         }
         
         #endregion
@@ -341,7 +447,16 @@ namespace BilVeFethet.Managers
         /// </summary>
         public void StartBotGame()
         {
-            GameModeManager.Instance?.StartSinglePlayerGame(BotManager.BotDifficulty.Normal);
+            // InGameSceneManager varsa onu kullan
+            if (InGameSceneManager.Instance != null)
+            {
+                InGameSceneManager.Instance.StartSinglePlayerGame();
+            }
+            else
+            {
+                // Fallback - eski sistemi kullan
+                GameModeManager.Instance?.StartSinglePlayerGame(BotManager.BotDifficulty.Normal);
+            }
         }
         
         /// <summary>
@@ -427,31 +542,55 @@ namespace BilVeFethet.Managers
         
         private void RefreshPlayerInfo()
         {
-            var playerData = PlayerManager.Instance?.LocalPlayerData;
-            
+            // Önce ProfileManager'dan dene, sonra PlayerManager
+            bool useProfile = ProfileManager.Instance != null && ProfileManager.Instance.IsProfileLoaded;
+
             if (playerNameText != null)
-                playerNameText.text = playerData?.displayName ?? "Oyuncu";
-                
+            {
+                playerNameText.text = useProfile
+                    ? ProfileManager.Instance.DisplayName
+                    : PlayerManager.Instance?.LocalPlayerData?.displayName ?? "Oyuncu";
+            }
+
             if (playerLevelText != null)
-                playerLevelText.text = $"Seviye {PlayerManager.Instance?.Level ?? 1}";
-                
+            {
+                int level = useProfile
+                    ? ProfileManager.Instance.Level
+                    : PlayerManager.Instance?.Level ?? 1;
+                playerLevelText.text = $"Seviye {level}";
+            }
+
             if (tpText != null)
-                tpText.text = $"{PlayerManager.Instance?.WeeklyTP ?? 0} TP";
-                
+            {
+                int weeklyTP = useProfile
+                    ? ProfileManager.Instance.WeeklyTP
+                    : PlayerManager.Instance?.WeeklyTP ?? 0;
+                tpText.text = $"{weeklyTP} TP";
+            }
+
             if (goldText != null)
-                goldText.text = $"{PlayerManager.Instance?.GoldCoins ?? 0}";
-                
+            {
+                int gold = useProfile
+                    ? ProfileManager.Instance.GoldCoins
+                    : PlayerManager.Instance?.GoldCoins ?? 0;
+                goldText.text = $"{gold}";
+            }
+
             if (gameRightsText != null)
             {
-                int rights = PlayerManager.Instance?.GameRights ?? 0;
+                int rights = useProfile
+                    ? ProfileManager.Instance.GameRights
+                    : PlayerManager.Instance?.GameRights ?? 0;
                 gameRightsText.text = rights > 0 ? $"{rights} Oyun Hakkı" : "Oyun hakkı yok";
             }
-            
+
             // Level progress
             if (levelProgressSlider != null)
             {
-                // Basit progress hesaplama (gerçek implementasyonda RankingManager'dan alınacak)
-                levelProgressSlider.value = UnityEngine.Random.Range(0.1f, 0.9f);
+                float progress = PlayerManager.Instance != null
+                    ? PlayerManager.Instance.GetLevelProgressPercentage()
+                    : 0.5f;
+                levelProgressSlider.value = progress;
             }
         }
         
@@ -641,7 +780,78 @@ namespace BilVeFethet.Managers
             RefreshPlayerInfo();
             // Level up animasyonu göster
         }
-        
+
+        #endregion
+
+        #region Auth Event Handlers
+
+        private void HandleAuthLogin(object sender, LoginEventArgs e)
+        {
+            if (e.Success)
+            {
+                ShowAuthContainer(false);
+                RefreshPlayerInfo();
+                RefreshLeaderboardPreview();
+                ShowMainMenu();
+            }
+        }
+
+        private void HandleAuthRegister(object sender, RegisterEventArgs e)
+        {
+            if (e.Success)
+            {
+                ShowAuthContainer(false);
+                RefreshPlayerInfo();
+                RefreshLeaderboardPreview();
+                ShowMainMenu();
+            }
+        }
+
+        private void HandleAuthLogout(object sender, EventArgs e)
+        {
+            ShowAuthContainer(true);
+            HideAllPanels();
+        }
+
+        private void HandleProfileLoaded(ProfileData profile)
+        {
+            Debug.Log($"[MainMenuManager] Profile loaded: {profile.displayName}");
+            RefreshPlayerInfo();
+        }
+
+        private void HandleProfileUpdated(ProfileData profile)
+        {
+            Debug.Log($"[MainMenuManager] Profile updated: {profile.displayName}");
+            RefreshPlayerInfo();
+        }
+
+        private void HandleUILoginSuccess()
+        {
+            ShowAuthContainer(false);
+            RefreshPlayerInfo();
+            RefreshLeaderboardPreview();
+            ShowMainMenu();
+        }
+
+        private void HandleUIRegisterSuccess()
+        {
+            ShowAuthContainer(false);
+            RefreshPlayerInfo();
+            RefreshLeaderboardPreview();
+            ShowMainMenu();
+        }
+
+        /// <summary>
+        /// Çıkış yap
+        /// </summary>
+        public async void Logout()
+        {
+            if (AuthManager.Instance != null)
+            {
+                await AuthManager.Instance.LogoutAsync();
+            }
+        }
+
         #endregion
     }
 }

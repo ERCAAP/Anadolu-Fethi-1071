@@ -6,12 +6,13 @@ using BilVeFethet.Data;
 using BilVeFethet.Enums;
 using BilVeFethet.Events;
 using BilVeFethet.Utils;
+using BilVeFethet.UI;
 
 namespace BilVeFethet.Managers
 {
     /// <summary>
     /// Oyun İçi Akış Yöneticisi - Oyun akışını koordine eder
-    /// GameUIManager, QuestionManager ve diğer sistemler arasında köprü görevi görür
+    /// GameUIManager, QuestionManager, BotAIController ve diğer sistemler arasında köprü görevi görür
     /// </summary>
     public class InGameFlowManager : Singleton<InGameFlowManager>
     {
@@ -20,6 +21,12 @@ namespace BilVeFethet.Managers
         [SerializeField] private float betweenQuestionDelay = 1.5f;
         [SerializeField] private float gameStartCountdown = 3f;
         [SerializeField] private int questionsPerRound = 4;
+        [SerializeField] private int totalRounds = 4;
+
+        [Header("Puan Ayarları")]
+        [SerializeField] private int basePoints = 100;
+        [SerializeField] private int speedBonusMax = 50;
+        [SerializeField] private float speedBonusTimeThreshold = 5f;
 
         // Game State
         private GameStateData currentGameState;
@@ -28,22 +35,31 @@ namespace BilVeFethet.Managers
         private int currentRound = 0;
         private int currentQuestionIndex = 0;
         private bool isWaitingForAnswer = false;
+        private float questionStartTime;
+
+        // Answer tracking
+        private Dictionary<string, PlayerAnswerData> _playerAnswers;
+        private int _answeredPlayerCount;
 
         // Events
         public event Action OnGameFlowStarted;
         public event Action OnGameFlowEnded;
         public event Action<int> OnRoundChanged;
         public event Action<int, int> OnQuestionIndexChanged; // currentIndex, total
+        public event Action<QuestionData> OnQuestionStarted;
+        public event Action<List<PlayerAnswerResult>> OnQuestionEnded;
 
         // Properties
         public bool IsGameActive => isGameActive;
         public int CurrentRound => currentRound;
         public int CurrentQuestionIndex => currentQuestionIndex;
         public GameStateData CurrentGameState => currentGameState;
+        public QuestionData CurrentQuestion => currentQuestion;
 
         protected override void Awake()
         {
             base.Awake();
+            _playerAnswers = new Dictionary<string, PlayerAnswerData>();
         }
 
         private void Start()
@@ -76,6 +92,9 @@ namespace BilVeFethet.Managers
             GameEvents.OnGameEnded += HandleGameEnded;
             GameEvents.OnPhaseChanged += HandlePhaseChanged;
             GameEvents.OnJokerResultReceived += HandleJokerResult;
+
+            // Bot Events
+            GameEvents.OnBotAnswerSubmittedDetailed += HandleBotAnswerSubmitted;
         }
 
         private void UnsubscribeFromEvents()
@@ -96,6 +115,33 @@ namespace BilVeFethet.Managers
             GameEvents.OnGameEnded -= HandleGameEnded;
             GameEvents.OnPhaseChanged -= HandlePhaseChanged;
             GameEvents.OnJokerResultReceived -= HandleJokerResult;
+            GameEvents.OnBotAnswerSubmittedDetailed -= HandleBotAnswerSubmitted;
+        }
+
+        /// <summary>
+        /// Bot cevabı geldiğinde
+        /// </summary>
+        private void HandleBotAnswerSubmitted(string playerId, int answerIndex, float guessedValue, bool isCorrect, int points)
+        {
+            if (!isWaitingForAnswer) return;
+
+            // Bot cevabını kaydet
+            var answerData = new PlayerAnswerData
+            {
+                playerId = playerId,
+                questionId = currentQuestion?.questionId,
+                selectedAnswerIndex = answerIndex,
+                guessedValue = guessedValue,
+                answerTime = Time.time - questionStartTime
+            };
+
+            _playerAnswers[playerId] = answerData;
+            _answeredPlayerCount++;
+
+            Debug.Log($"[InGameFlowManager] Bot cevapladı: {playerId}, Doğru: {isCorrect}, Puan: {points}");
+
+            // Tüm oyuncular cevapladıysa sonuçları göster
+            CheckAllPlayersAnswered();
         }
 
         #region Public Methods
@@ -173,19 +219,24 @@ namespace BilVeFethet.Managers
                 return;
             }
 
-            isWaitingForAnswer = false;
+            string playerId = ProfileManager.Instance?.CurrentProfile?.userId ??
+                              PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local";
 
+            // Cevabı kaydet
             var answerData = new PlayerAnswerData
             {
-                playerId = PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local",
+                playerId = playerId,
                 questionId = currentQuestion.questionId,
                 selectedAnswerIndex = answerIndex,
-                answerTime = Time.time
+                answerTime = Time.time - questionStartTime
             };
+
+            _playerAnswers[playerId] = answerData;
+            _answeredPlayerCount++;
 
             // Cevabı değerlendir
             bool isCorrect = answerIndex == currentQuestion.correctAnswerIndex;
-            int points = isCorrect ? CalculatePoints() : 0;
+            int points = isCorrect ? CalculatePointsWithSpeed(answerData.answerTime, 1) : 0;
 
             // Yerel oyuncu skorunu güncelle
             UpdateLocalPlayerScore(isCorrect, points);
@@ -195,10 +246,12 @@ namespace BilVeFethet.Managers
             GameUIManager.Instance?.ShowAnswerResult(isCorrect, points, correctAnswer, questionAnswerDelay);
 
             // Event tetikle
-            GameEvents.TriggerPlayerAnswered(answerData.playerId, answerIndex);
+            GameEvents.TriggerPlayerAnswered(playerId, answerIndex);
 
-            // Bir sonraki soruya geç
-            StartCoroutine(NextQuestionSequence());
+            Debug.Log($"[InGameFlowManager] Yerel oyuncu cevapladı - Doğru: {isCorrect}, Puan: {points}, Süre: {answerData.answerTime:F1}s");
+
+            // Tüm oyuncular cevapladıysa sonuçları göster
+            CheckAllPlayersAnswered();
         }
 
         /// <summary>
@@ -218,7 +271,8 @@ namespace BilVeFethet.Managers
                 return;
             }
 
-            isWaitingForAnswer = false;
+            string playerId = ProfileManager.Instance?.CurrentProfile?.userId ??
+                              PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local";
 
             float correctValue = currentQuestion.correctValue;
             float tolerance = currentQuestion.tolerance;
@@ -230,11 +284,23 @@ namespace BilVeFethet.Managers
             // Tolerans dahilinde mi kontrol et
             bool isCorrect = difference <= tolerance;
 
+            // Cevabı kaydet
+            var answerData = new PlayerAnswerData
+            {
+                playerId = playerId,
+                questionId = currentQuestion.questionId,
+                guessedValue = guessedValue,
+                answerTime = Time.time - questionStartTime
+            };
+
+            _playerAnswers[playerId] = answerData;
+            _answeredPlayerCount++;
+
             // Puan hesapla - doğruluk oranına göre
             int points = 0;
             if (isCorrect)
             {
-                points = CalculatePoints();
+                points = CalculatePointsWithSpeed(answerData.answerTime, 1);
                 // Mükemmel cevap bonusu
                 if (difference == 0)
                 {
@@ -263,17 +329,12 @@ namespace BilVeFethet.Managers
             );
 
             // Event tetikle
-            var answerData = new PlayerAnswerData
-            {
-                playerId = PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local",
-                questionId = currentQuestion.questionId,
-                guessedValue = guessedValue,
-                answerTime = Time.time
-            };
-            GameEvents.TriggerPlayerAnswered(answerData.playerId, -1); // -1 = tahmin sorusu
+            GameEvents.TriggerPlayerAnswered(playerId, -1); // -1 = tahmin sorusu
 
-            // Bir sonraki soruya geç
-            StartCoroutine(NextQuestionSequence());
+            Debug.Log($"[InGameFlowManager] Tahmin cevabı - Tahmin: {guessedValue}, Doğru: {correctValue}, Doğruluk: {accuracy:F1}%");
+
+            // Tüm oyuncular cevapladıysa sonuçları göster
+            CheckAllPlayersAnswered();
         }
 
         #endregion
@@ -298,14 +359,18 @@ namespace BilVeFethet.Managers
         {
             if (!isGameActive) return;
 
+            // Cevap takibini sıfırla
+            _playerAnswers.Clear();
+            _answeredPlayerCount = 0;
+
             // QuestionLoader'dan soru al (varsa), yoksa demo soru kullan
             QuestionData question = null;
-            
+
             if (QuestionLoader.Instance != null && QuestionLoader.Instance.IsLoaded)
             {
                 question = QuestionLoader.Instance.GetRandomQuestion();
             }
-            
+
             if (question == null)
             {
                 question = CreateDemoQuestion();
@@ -313,6 +378,7 @@ namespace BilVeFethet.Managers
 
             currentQuestion = question;
             currentQuestionIndex++;
+            questionStartTime = Time.time;
 
             Debug.Log($"[InGameFlowManager] Showing question {currentQuestionIndex}/{questionsPerRound}");
 
@@ -322,9 +388,141 @@ namespace BilVeFethet.Managers
 
             isWaitingForAnswer = true;
             OnQuestionIndexChanged?.Invoke(currentQuestionIndex, questionsPerRound);
+            OnQuestionStarted?.Invoke(question);
 
             // Zamanlayıcı başlat
             GameEvents.TriggerQuestionTimerStarted(question.timeLimit);
+        }
+
+        /// <summary>
+        /// Tüm oyuncuların cevap verip vermediğini kontrol et
+        /// </summary>
+        private void CheckAllPlayersAnswered()
+        {
+            if (currentGameState == null) return;
+
+            int activePlayerCount = currentGameState.GetActivePlayerCount();
+
+            // Tüm aktif oyuncular cevapladıysa
+            if (_answeredPlayerCount >= activePlayerCount)
+            {
+                // Soru sonuçlarını hesapla ve göster
+                StartCoroutine(ProcessQuestionResults());
+            }
+        }
+
+        /// <summary>
+        /// Soru sonuçlarını işle
+        /// </summary>
+        private IEnumerator ProcessQuestionResults()
+        {
+            isWaitingForAnswer = false;
+
+            // Kısa bekleme (animasyonlar için)
+            yield return new WaitForSeconds(0.5f);
+
+            // Sonuçları hesapla
+            var results = CalculateQuestionResults();
+
+            // Event tetikle
+            var resultData = new QuestionResultData
+            {
+                questionId = currentQuestion?.questionId,
+                playerResults = results,
+                correctAnswerIndex = currentQuestion?.correctAnswerIndex ?? 0,
+                correctValue = currentQuestion?.correctValue ?? 0
+            };
+
+            GameEvents.TriggerQuestionResultReceived(resultData);
+            OnQuestionEnded?.Invoke(results);
+
+            // Sonraki soruya geç
+            StartCoroutine(NextQuestionSequence());
+        }
+
+        /// <summary>
+        /// Soru sonuçlarını hesapla
+        /// </summary>
+        private List<PlayerAnswerResult> CalculateQuestionResults()
+        {
+            var results = new List<PlayerAnswerResult>();
+            if (currentQuestion == null || currentGameState == null) return results;
+
+            // Cevapları sırala (hıza göre)
+            var sortedAnswers = new List<KeyValuePair<string, PlayerAnswerData>>();
+            foreach (var kvp in _playerAnswers)
+            {
+                sortedAnswers.Add(kvp);
+            }
+            sortedAnswers.Sort((a, b) => a.Value.answerTime.CompareTo(b.Value.answerTime));
+
+            int rank = 0;
+            foreach (var kvp in sortedAnswers)
+            {
+                var playerId = kvp.Key;
+                var answer = kvp.Value;
+                var player = currentGameState.GetPlayer(playerId);
+                if (player == null) continue;
+
+                bool isCorrect;
+                float accuracy = 0f;
+
+                if (currentQuestion.questionType == QuestionType.CoktanSecmeli)
+                {
+                    isCorrect = answer.selectedAnswerIndex == currentQuestion.correctAnswerIndex;
+                }
+                else
+                {
+                    // Tahmin sorusu
+                    float diff = Mathf.Abs(answer.guessedValue - currentQuestion.correctValue);
+                    isCorrect = diff <= currentQuestion.tolerance;
+                    accuracy = Mathf.Max(0f, 100f - (diff / currentQuestion.correctValue * 100f));
+                }
+
+                // Puan hesapla
+                int earnedPoints = 0;
+                if (isCorrect)
+                {
+                    rank++;
+                    earnedPoints = CalculatePointsWithSpeed(answer.answerTime, rank);
+                }
+
+                results.Add(new PlayerAnswerResult
+                {
+                    playerId = playerId,
+                    isCorrect = isCorrect,
+                    selectedAnswerIndex = answer.selectedAnswerIndex,
+                    guessedValue = answer.guessedValue,
+                    answerTime = answer.answerTime,
+                    earnedPoints = earnedPoints,
+                    rank = isCorrect ? rank : 0,
+                    accuracy = accuracy
+                });
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Hız bonusu dahil puan hesapla
+        /// </summary>
+        private int CalculatePointsWithSpeed(float answerTime, int rank)
+        {
+            int points = CalculatePoints();
+
+            // Hız bonusu (ilk X saniyede cevaplama)
+            if (answerTime <= speedBonusTimeThreshold)
+            {
+                float speedRatio = 1f - (answerTime / speedBonusTimeThreshold);
+                int speedBonus = Mathf.RoundToInt(speedRatio * speedBonusMax);
+                points += speedBonus;
+            }
+
+            // Sıralama bonusu
+            if (rank == 1) points += 25;
+            else if (rank == 2) points += 10;
+
+            return points;
         }
 
         private IEnumerator NextQuestionSequence()
@@ -339,10 +537,15 @@ namespace BilVeFethet.Managers
                 // Tur sonu
                 currentRound++;
                 currentQuestionIndex = 0;
-                OnRoundChanged?.Invoke(currentRound);
 
-                // Oyun sonu kontrolü (4 tur)
-                if (currentRound > 4)
+                GameEvents.TriggerRoundEnded(currentRound - 1);
+                OnRoundChanged?.Invoke(currentRound);
+                GameEvents.TriggerRoundStarted(currentRound);
+
+                Debug.Log($"[InGameFlowManager] Yeni tur başladı: {currentRound}/{totalRounds}");
+
+                // Oyun sonu kontrolü
+                if (currentRound > totalRounds)
                 {
                     EndGame();
                     yield break;
@@ -356,16 +559,26 @@ namespace BilVeFethet.Managers
         private void EndGame()
         {
             isGameActive = false;
+            isWaitingForAnswer = false;
 
             Debug.Log("[InGameFlowManager] Game ended");
+
+            // Bot cevaplarını durdur
+            BotAIController.Instance?.StopAllBotAnswers();
 
             // Sonuçları hazırla
             var results = PrepareGameResults();
 
+            // UI'da oyun sonu ekranını göster
+            BilVeFethet.UI.GameUIManager.Instance?.ShowGameOver(results);
+
             // Event tetikle
             GameEvents.TriggerGameEnded(results);
+            GameEvents.TriggerPhaseChanged(GamePhase.Savas, GamePhase.GameOver);
 
             OnGameFlowEnded?.Invoke();
+
+            Debug.Log($"[InGameFlowManager] Kazanan: {(results.Count > 0 ? results[0].displayName : "Yok")}");
         }
 
         private List<GameEndPlayerResult> PrepareGameResults()
@@ -759,32 +972,56 @@ namespace BilVeFethet.Managers
         {
             if (!isWaitingForAnswer) return;
 
-            isWaitingForAnswer = false;
+            string playerId = ProfileManager.Instance?.CurrentProfile?.userId ??
+                              PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local";
 
-            // Süre doldu - yanlış cevap olarak işle
-            UpdateLocalPlayerScore(false, 0);
-
-            if (currentQuestion?.questionType == QuestionType.Tahmin)
+            // Yerel oyuncu henüz cevap vermediyse
+            if (!_playerAnswers.ContainsKey(playerId))
             {
-                // Tahmin sorusu için
-                GameUIManager.Instance?.ShowEstimationResult(
-                    false,
-                    0,
-                    currentQuestion.correctValue,
-                    0,
-                    0,
-                    currentQuestion.valueUnit,
-                    questionAnswerDelay
-                );
-            }
-            else
-            {
-                // Çoktan seçmeli için
-                string correctAnswer = currentQuestion?.options[currentQuestion.correctAnswerIndex] ?? "";
-                GameUIManager.Instance?.ShowAnswerResult(false, 0, correctAnswer, questionAnswerDelay);
+                // Süre doldu - cevapsız kaydet
+                var answerData = new PlayerAnswerData
+                {
+                    playerId = playerId,
+                    questionId = currentQuestion?.questionId,
+                    selectedAnswerIndex = -1, // Cevap vermedi
+                    guessedValue = 0,
+                    answerTime = currentQuestion?.timeLimit ?? 15f
+                };
+
+                _playerAnswers[playerId] = answerData;
+                _answeredPlayerCount++;
+
+                // Süre doldu - yanlış cevap olarak işle
+                UpdateLocalPlayerScore(false, 0);
+
+                if (currentQuestion?.questionType == QuestionType.Tahmin)
+                {
+                    // Tahmin sorusu için
+                    GameUIManager.Instance?.ShowEstimationResult(
+                        false,
+                        0,
+                        currentQuestion.correctValue,
+                        0,
+                        0,
+                        currentQuestion.valueUnit,
+                        questionAnswerDelay
+                    );
+                }
+                else
+                {
+                    // Çoktan seçmeli için
+                    string correctAnswer = currentQuestion?.options[currentQuestion.correctAnswerIndex] ?? "";
+                    GameUIManager.Instance?.ShowAnswerResult(false, 0, correctAnswer, questionAnswerDelay);
+                }
+
+                Debug.Log("[InGameFlowManager] Süre doldu - yerel oyuncu cevap veremedi");
             }
 
-            StartCoroutine(NextQuestionSequence());
+            // Bot cevaplarını da zorla sonlandır
+            BotAIController.Instance?.StopAllBotAnswers();
+
+            // Tüm oyuncular için sonuçları işle
+            StartCoroutine(ProcessQuestionResults());
         }
 
         private void HandleBotGameStarted(List<InGamePlayerData> bots)
