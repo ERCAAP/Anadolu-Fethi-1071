@@ -124,83 +124,8 @@ namespace BilVeFethet.UI
 
         private void Start()
         {
-            FindUIReferences();
             SetupButtons();
             HideAllPanels();
-        }
-
-        /// <summary>
-        /// UI referanslarını otomatik bul (eğer atanmamışsa)
-        /// </summary>
-        private void FindUIReferences()
-        {
-            // GameCanvas'ı bul
-            var gameCanvas = GameObject.Find("GameCanvas");
-            if (gameCanvas == null) return;
-
-            // Ana Paneller
-            if (questionPanel == null)
-                questionPanel = gameCanvas.transform.Find("QuestionPanel")?.gameObject;
-            if (loadingPanel == null)
-                loadingPanel = gameCanvas.transform.Find("LoadingPanel")?.gameObject;
-            if (countdownPanel == null)
-                countdownPanel = gameCanvas.transform.Find("CountdownPanel")?.gameObject;
-            if (resultPanel == null)
-                resultPanel = gameCanvas.transform.Find("AnswerResultPanel")?.gameObject;
-            if (gameOverPanel == null)
-                gameOverPanel = gameCanvas.transform.Find("GameEndPanel")?.gameObject;
-
-            // QuestionPanel altındaki elemanlar
-            if (questionPanel != null)
-            {
-                var questionContainer = questionPanel.transform.Find("QuestionContainer");
-                if (questionContainer != null)
-                {
-                    if (questionText == null)
-                        questionText = questionContainer.Find("QuestionText")?.GetComponent<TextMeshProUGUI>();
-                    if (categoryText == null)
-                        categoryText = questionContainer.Find("CategoryText")?.GetComponent<TextMeshProUGUI>();
-                }
-
-                // OptionsContainer ve optionButtons
-                var optionsContainer = questionPanel.transform.Find("OptionsContainer");
-                if (optionsContainer != null && (optionButtons == null || optionButtons.Length == 0))
-                {
-                    var optionList = new List<OptionButton>();
-                    foreach (Transform child in optionsContainer)
-                    {
-                        var optBtn = child.GetComponent<OptionButton>();
-                        if (optBtn != null)
-                            optionList.Add(optBtn);
-                    }
-                    if (optionList.Count > 0)
-                        optionButtons = optionList.ToArray();
-                }
-            }
-
-            // CountdownPanel altındaki elemanlar
-            if (countdownPanel != null)
-            {
-                if (countdownText == null)
-                    countdownText = countdownPanel.transform.Find("CountdownText")?.GetComponent<TextMeshProUGUI>();
-                if (countdownSubText == null)
-                    countdownSubText = countdownPanel.transform.Find("CountdownMessageText")?.GetComponent<TextMeshProUGUI>();
-            }
-
-            // LoadingPanel altındaki elemanlar
-            if (loadingPanel != null)
-            {
-                if (loadingText == null)
-                    loadingText = loadingPanel.transform.Find("LoadingText")?.GetComponent<TextMeshProUGUI>();
-            }
-
-            // AnswerResultPanel
-            if (resultPanel != null && answerResultPopup == null)
-            {
-                answerResultPopup = resultPanel;
-            }
-
-            Debug.Log("[GameUIManager] UI referansları otomatik bulundu");
         }
 
         private void OnEnable()
@@ -732,16 +657,15 @@ namespace BilVeFethet.UI
 
         private void HideAllPanels()
         {
-            // Unity'nin "fake null" davranışı nedeniyle explicit null check kullanıyoruz
-            if (questionPanel != null) questionPanel.SetActive(false);
-            if (loadingPanel != null) loadingPanel.SetActive(false);
-            if (countdownPanel != null) countdownPanel.SetActive(false);
-            if (resultPanel != null) resultPanel.SetActive(false);
-            if (gameOverPanel != null) gameOverPanel.SetActive(false);
-            if (answerResultPopup != null) answerResultPopup.SetActive(false);
-            if (audienceResultPanel != null) audienceResultPanel.SetActive(false);
-            if (parrotHintPanel != null) parrotHintPanel.SetActive(false);
-            if (telescopePanel != null) telescopePanel.SetActive(false);
+            questionPanel?.SetActive(false);
+            loadingPanel?.SetActive(false);
+            countdownPanel?.SetActive(false);
+            resultPanel?.SetActive(false);
+            gameOverPanel?.SetActive(false);
+            answerResultPopup?.SetActive(false);
+            audienceResultPanel?.SetActive(false);
+            parrotHintPanel?.SetActive(false);
+            telescopePanel?.SetActive(false);
         }
 
         private void UpdateJokerButtons(QuestionType questionType)

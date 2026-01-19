@@ -174,17 +174,9 @@ namespace BilVeFethet.Managers
         public void StopGame()
         {
             isGameActive = false;
-            isWaitingForAnswer = false;
-            currentRound = 0;
-            currentQuestionIndex = 0;
-            currentQuestion = null;
-            currentGameState = null;
-            _playerAnswers?.Clear();
-            _answeredPlayerCount = 0;
-
             StopAllCoroutines();
             OnGameFlowEnded?.Invoke();
-            Debug.Log("[InGameFlowManager] Game flow stopped and reset");
+            Debug.Log("[InGameFlowManager] Game flow stopped");
         }
 
         /// <summary>
@@ -1034,9 +1026,8 @@ namespace BilVeFethet.Managers
 
         private void HandleBotGameStarted(List<InGamePlayerData> bots)
         {
-            Debug.Log($"[InGameFlowManager] Bot game started event received with {bots.Count} bots");
-            // Not: InGameSceneManager zaten StartGame'i çağırıyor, burada tekrar çağırmıyoruz
-            // Bu event sadece bilgi amaçlı - oyun InGameSceneManager tarafından başlatılıyor
+            Debug.Log($"[InGameFlowManager] Bot game started with {bots.Count} bots");
+            StartBotGame(bots);
         }
 
         private void HandleGameFound(string gameId)

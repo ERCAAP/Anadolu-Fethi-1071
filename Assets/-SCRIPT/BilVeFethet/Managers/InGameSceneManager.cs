@@ -140,29 +140,21 @@ namespace BilVeFethet.Managers
         {
             ShowLoading("Oyun Hazırlanıyor...");
 
-            // 1. Profil kontrolü (opsiyonel - offline da çalışabilir)
+            // 1. Profil kontrolü
             yield return StartCoroutine(EnsureProfileLoaded());
 
             UpdateLoadingProgress(0.2f);
 
-            // 2. Oyun hakkı kontrolü (tek oyunculu modda offline çalışabilir)
-            // Not: Profil yüklü değilse veya offline modda oyun hakkı kontrolü yapılmaz
-            bool hasGameRights = true;
-            if (ProfileManager.Instance != null && ProfileManager.Instance.IsProfileLoaded)
+            // 2. Oyun hakkı kontrolü
+            if (ProfileManager.Instance != null && ProfileManager.Instance.GameRights <= 0)
             {
-                hasGameRights = ProfileManager.Instance.GameRights > 0;
-                if (!hasGameRights)
-                {
-                    Debug.LogWarning("[InGameSceneManager] No game rights, but allowing single player game");
-                    // Tek oyunculu modda oyun hakkı olmasa da devam et (demo amaçlı)
-                }
+                ShowError("Oyun hakkınız kalmadı!");
+                yield break;
             }
 
-            // 3. Oyun hakkı kullan (sadece profil yüklüyse ve online ise)
-            // Not: Offline/demo modda bu adımı atlıyoruz
-            if (ProfileManager.Instance != null && ProfileManager.Instance.IsProfileLoaded && hasGameRights)
+            // 3. Oyun hakkı kullan
+            if (ProfileManager.Instance != null)
             {
-                // Sunucu çağrısı başarısız olsa bile devam et
                 yield return StartCoroutine(UseGameRightCoroutine());
             }
 
@@ -344,43 +336,6 @@ namespace BilVeFethet.Managers
             {
                 playerTopBar = FindFirstObjectByType<PlayerTopBar>();
             }
-
-            // GameCanvas'tan UI referanslarını bul
-            FindUIReferences();
-        }
-
-        /// <summary>
-        /// UI referanslarını otomatik bul
-        /// </summary>
-        private void FindUIReferences()
-        {
-            var gameCanvas = GameObject.Find("GameCanvas");
-            if (gameCanvas == null) return;
-
-            // LoadingPanel ve alt elemanları
-            if (loadingScreen == null)
-            {
-                var loadingPanel = gameCanvas.transform.Find("LoadingPanel");
-                if (loadingPanel != null)
-                {
-                    loadingScreen = loadingPanel.gameObject;
-
-                    if (loadingText == null)
-                        loadingText = loadingPanel.Find("LoadingText")?.GetComponent<TMPro.TextMeshProUGUI>();
-
-                    if (loadingProgressBar == null)
-                    {
-                        var progressImage = loadingPanel.Find("LoadingProgressImage");
-                        if (progressImage != null)
-                        {
-                            loadingProgressBar = progressImage.GetComponent<UnityEngine.UI.Slider>();
-                            // Slider yoksa Image'dan oluşturmayı deneme - sadece slider varsa kullan
-                        }
-                    }
-                }
-            }
-
-            Debug.Log("[InGameSceneManager] UI referansları otomatik bulundu");
         }
 
         private IEnumerator EnsureProfileLoaded()
@@ -402,23 +357,12 @@ namespace BilVeFethet.Managers
         {
             if (ProfileManager.Instance == null) yield break;
 
-            // Timeout ile bekle - sunucu cevap vermezse devam et
             var task = ProfileManager.Instance.UseGameRightAsync();
-            float startTime = Time.time;
-            float timeout = 5f; // 5 saniye timeout
+            yield return new WaitUntil(() => task.IsCompleted);
 
-            while (!task.IsCompleted && Time.time - startTime < timeout)
+            if (!task.Result)
             {
-                yield return null;
-            }
-
-            if (!task.IsCompleted)
-            {
-                Debug.LogWarning("[InGameSceneManager] Game right request timed out, continuing anyway");
-            }
-            else if (!task.Result)
-            {
-                Debug.LogWarning("[InGameSceneManager] Failed to use game right, but continuing with game");
+                Debug.LogWarning("[InGameSceneManager] Failed to use game right");
             }
         }
 
