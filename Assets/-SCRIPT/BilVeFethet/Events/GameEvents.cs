@@ -160,9 +160,6 @@ namespace BilVeFethet.Events
         /// <summary>Bot cevap verdi</summary>
         public static event Action<PlayerAnswerData> OnBotAnswerSubmitted;
 
-        /// <summary>Bot cevap verdi (detaylı)</summary>
-        public static event Action<string, int, float, bool, int> OnBotAnswerSubmittedDetailed;  // playerId, answerIndex, guessedValue, isCorrect, points
-
         /// <summary>Bot toprak seçti</summary>
         public static event Action<string, int> OnBotTerritorySelected;  // botId, territoryId
 
@@ -252,8 +249,6 @@ namespace BilVeFethet.Events
         // Bot
         public static void TriggerBotGameStarted(List<InGamePlayerData> bots) => OnBotGameStarted?.Invoke(bots);
         public static void TriggerBotAnswerSubmitted(PlayerAnswerData answer) => OnBotAnswerSubmitted?.Invoke(answer);
-        public static void TriggerBotAnswerSubmitted(string playerId, int answerIndex, float guessedValue, bool isCorrect, int points)
-            => OnBotAnswerSubmittedDetailed?.Invoke(playerId, answerIndex, guessedValue, isCorrect, points);
         public static void TriggerBotTerritorySelected(string botId, int territoryId) => OnBotTerritorySelected?.Invoke(botId, territoryId);
         public static void TriggerBotAttackTargetSelected(string botId, int targetId, bool useMagicWings) => OnBotAttackTargetSelected?.Invoke(botId, targetId, useMagicWings);
         public static void TriggerAttackPhaseStarted(string playerId, List<int> targets) => OnAttackPhaseStarted?.Invoke(playerId, targets);
@@ -309,7 +304,6 @@ namespace BilVeFethet.Events
             OnPingUpdated = null;
             OnBotGameStarted = null;
             OnBotAnswerSubmitted = null;
-            OnBotAnswerSubmittedDetailed = null;
             OnBotTerritorySelected = null;
             OnBotAttackTargetSelected = null;
             OnAttackPhaseStarted = null;
