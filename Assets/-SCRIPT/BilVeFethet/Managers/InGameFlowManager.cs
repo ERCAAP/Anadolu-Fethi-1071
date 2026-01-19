@@ -62,9 +62,11 @@ namespace BilVeFethet.Managers
             if (GameUIManager.Instance != null)
             {
                 GameUIManager.Instance.OnOptionSelected += HandleOptionSelected;
+                GameUIManager.Instance.OnEstimationSubmitted += HandleEstimationSubmitted;
                 GameUIManager.Instance.OnTimeUp += HandleTimeUp;
                 GameUIManager.Instance.OnPlayAgainClicked += HandlePlayAgain;
                 GameUIManager.Instance.OnMainMenuClicked += HandleMainMenu;
+                GameUIManager.Instance.OnJokerUsed += HandleJokerUsed;
             }
 
             // Game Events
@@ -73,6 +75,7 @@ namespace BilVeFethet.Managers
             GameEvents.OnQuestionResultReceived += HandleQuestionResult;
             GameEvents.OnGameEnded += HandleGameEnded;
             GameEvents.OnPhaseChanged += HandlePhaseChanged;
+            GameEvents.OnJokerResultReceived += HandleJokerResult;
         }
 
         private void UnsubscribeFromEvents()
@@ -80,9 +83,11 @@ namespace BilVeFethet.Managers
             if (GameUIManager.Instance != null)
             {
                 GameUIManager.Instance.OnOptionSelected -= HandleOptionSelected;
+                GameUIManager.Instance.OnEstimationSubmitted -= HandleEstimationSubmitted;
                 GameUIManager.Instance.OnTimeUp -= HandleTimeUp;
                 GameUIManager.Instance.OnPlayAgainClicked -= HandlePlayAgain;
                 GameUIManager.Instance.OnMainMenuClicked -= HandleMainMenu;
+                GameUIManager.Instance.OnJokerUsed -= HandleJokerUsed;
             }
 
             GameEvents.OnBotGameStarted -= HandleBotGameStarted;
@@ -90,6 +95,7 @@ namespace BilVeFethet.Managers
             GameEvents.OnQuestionResultReceived -= HandleQuestionResult;
             GameEvents.OnGameEnded -= HandleGameEnded;
             GameEvents.OnPhaseChanged -= HandlePhaseChanged;
+            GameEvents.OnJokerResultReceived -= HandleJokerResult;
         }
 
         #region Public Methods
@@ -157,7 +163,7 @@ namespace BilVeFethet.Managers
         }
 
         /// <summary>
-        /// Soru cevabını gönder
+        /// Çoktan seçmeli soru cevabını gönder
         /// </summary>
         public void SubmitAnswer(int answerIndex)
         {
@@ -195,6 +201,81 @@ namespace BilVeFethet.Managers
             StartCoroutine(NextQuestionSequence());
         }
 
+        /// <summary>
+        /// Tahmin sorusu cevabını gönder
+        /// </summary>
+        public void SubmitEstimationAnswer(float guessedValue)
+        {
+            if (!isWaitingForAnswer || currentQuestion == null)
+            {
+                Debug.LogWarning("[InGameFlowManager] Not waiting for answer or no current question");
+                return;
+            }
+
+            if (currentQuestion.questionType != QuestionType.Tahmin)
+            {
+                Debug.LogWarning("[InGameFlowManager] Current question is not an estimation question");
+                return;
+            }
+
+            isWaitingForAnswer = false;
+
+            float correctValue = currentQuestion.correctValue;
+            float tolerance = currentQuestion.tolerance;
+
+            // Doğruluğu hesapla
+            float difference = Mathf.Abs(guessedValue - correctValue);
+            float accuracy = Mathf.Max(0f, 100f - (difference / correctValue * 100f));
+
+            // Tolerans dahilinde mi kontrol et
+            bool isCorrect = difference <= tolerance;
+
+            // Puan hesapla - doğruluk oranına göre
+            int points = 0;
+            if (isCorrect)
+            {
+                points = CalculatePoints();
+                // Mükemmel cevap bonusu
+                if (difference == 0)
+                {
+                    points = Mathf.RoundToInt(points * 1.5f);
+                }
+            }
+            else if (accuracy >= 80f)
+            {
+                // Yakın cevap - kısmi puan
+                points = Mathf.RoundToInt(CalculatePoints() * 0.5f);
+                isCorrect = true; // Yakın cevap da doğru sayılır
+            }
+
+            // Yerel oyuncu skorunu güncelle
+            UpdateLocalPlayerScore(isCorrect, points);
+
+            // Sonucu göster
+            GameUIManager.Instance?.ShowEstimationResult(
+                isCorrect,
+                points,
+                correctValue,
+                guessedValue,
+                accuracy,
+                currentQuestion.valueUnit,
+                questionAnswerDelay
+            );
+
+            // Event tetikle
+            var answerData = new PlayerAnswerData
+            {
+                playerId = PlayerManager.Instance?.LocalPlayerData?.playerId ?? "local",
+                questionId = currentQuestion.questionId,
+                guessedValue = guessedValue,
+                answerTime = Time.time
+            };
+            GameEvents.TriggerPlayerAnswered(answerData.playerId, -1); // -1 = tahmin sorusu
+
+            // Bir sonraki soruya geç
+            StartCoroutine(NextQuestionSequence());
+        }
+
         #endregion
 
         #region Private Methods
@@ -217,8 +298,18 @@ namespace BilVeFethet.Managers
         {
             if (!isGameActive) return;
 
-            // Demo soru oluştur (gerçek implementasyonda sunucudan gelecek)
-            var question = CreateDemoQuestion();
+            // QuestionLoader'dan soru al (varsa), yoksa demo soru kullan
+            QuestionData question = null;
+            
+            if (QuestionLoader.Instance != null && QuestionLoader.Instance.IsLoaded)
+            {
+                question = QuestionLoader.Instance.GetRandomQuestion();
+            }
+            
+            if (question == null)
+            {
+                question = CreateDemoQuestion();
+            }
 
             currentQuestion = question;
             currentQuestionIndex++;
@@ -350,10 +441,10 @@ namespace BilVeFethet.Managers
                 questionId = "q1",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.GenelKultur,
-                questionText = "Türkiye'nin başkenti neresidir?",
+                questionText = "Turkiye'nin baskenti neresidir?",
                 timeLimit = 15f,
                 difficultyLevel = 3,
-                options = new List<string> { "İstanbul", "Ankara", "İzmir", "Bursa" },
+                options = new List<string> { "Istanbul", "Ankara", "Izmir", "Bursa" },
                 correctAnswerIndex = 1
             },
             new QuestionData
@@ -361,7 +452,7 @@ namespace BilVeFethet.Managers
                 questionId = "q2",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.Tarih,
-                questionText = "Malazgirt Meydan Muharebesi hangi yılda gerçekleşmiştir?",
+                questionText = "Malazgirt Meydan Muharebesi hangi yilda gerceklesmistir?",
                 timeLimit = 15f,
                 difficultyLevel = 5,
                 options = new List<string> { "1071", "1453", "1299", "1176" },
@@ -372,7 +463,7 @@ namespace BilVeFethet.Managers
                 questionId = "q3",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.Bilim,
-                questionText = "Suyun kimyasal formülü nedir?",
+                questionText = "Suyun kimyasal formulu nedir?",
                 timeLimit = 15f,
                 difficultyLevel = 2,
                 options = new List<string> { "CO2", "H2O", "NaCl", "O2" },
@@ -382,8 +473,8 @@ namespace BilVeFethet.Managers
             {
                 questionId = "q4",
                 questionType = QuestionType.CoktanSecmeli,
-                category = QuestionCategory.Cografya,
-                questionText = "Dünyanın en büyük okyanusu hangisidir?",
+                category = QuestionCategory.GenelKultur,
+                questionText = "Dunyanin en buyuk okyanusu hangisidir?",
                 timeLimit = 15f,
                 difficultyLevel = 3,
                 options = new List<string> { "Atlantik", "Hint", "Pasifik", "Kuzey Buz" },
@@ -394,10 +485,10 @@ namespace BilVeFethet.Managers
                 questionId = "q5",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.Spor,
-                questionText = "FIFA Dünya Kupası kaç yılda bir düzenlenir?",
+                questionText = "FIFA Dunya Kupasi kac yilda bir duzenlenir?",
                 timeLimit = 15f,
                 difficultyLevel = 2,
-                options = new List<string> { "2 yıl", "3 yıl", "4 yıl", "5 yıl" },
+                options = new List<string> { "2 yil", "3 yil", "4 yil", "5 yil" },
                 correctAnswerIndex = 2
             },
             new QuestionData
@@ -405,7 +496,7 @@ namespace BilVeFethet.Managers
                 questionId = "q6",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.Sanat,
-                questionText = "Mona Lisa tablosunun ressamı kimdir?",
+                questionText = "Mona Lisa tablosunun ressami kimdir?",
                 timeLimit = 15f,
                 difficultyLevel = 4,
                 options = new List<string> { "Michelangelo", "Leonardo da Vinci", "Raphael", "Van Gogh" },
@@ -415,8 +506,8 @@ namespace BilVeFethet.Managers
             {
                 questionId = "q7",
                 questionType = QuestionType.CoktanSecmeli,
-                category = QuestionCategory.Teknoloji,
-                questionText = "İlk iPhone hangi yılda piyasaya sürüldü?",
+                category = QuestionCategory.Bilim,
+                questionText = "Ilk iPhone hangi yilda piyasaya suruldu?",
                 timeLimit = 15f,
                 difficultyLevel = 5,
                 options = new List<string> { "2005", "2006", "2007", "2008" },
@@ -427,11 +518,60 @@ namespace BilVeFethet.Managers
                 questionId = "q8",
                 questionType = QuestionType.CoktanSecmeli,
                 category = QuestionCategory.Tarih,
-                questionText = "İstanbul'un fethi hangi tarihte gerçekleşmiştir?",
+                questionText = "Istanbul'un fethi hangi tarihte gerceklesmistir?",
                 timeLimit = 15f,
                 difficultyLevel = 4,
-                options = new List<string> { "29 Mayıs 1453", "6 Nisan 1453", "30 Ağustos 1071", "23 Nisan 1920" },
+                options = new List<string> { "29 Mayis 1453", "6 Nisan 1453", "30 Agustos 1071", "23 Nisan 1920" },
                 correctAnswerIndex = 0
+            },
+            // Tahmin soruları
+            new QuestionData
+            {
+                questionId = "q9",
+                questionType = QuestionType.Tahmin,
+                category = QuestionCategory.Tarih,
+                questionText = "Osmanli Devleti hangi yil kurulmustur?",
+                timeLimit = 20f,
+                difficultyLevel = 5,
+                correctValue = 1299f,
+                tolerance = 10f,
+                valueUnit = "yil"
+            },
+            new QuestionData
+            {
+                questionId = "q10",
+                questionType = QuestionType.Tahmin,
+                category = QuestionCategory.GenelKultur,
+                questionText = "Dunyanin en yuksek dagi Everest kac metre yuksekligindedir?",
+                timeLimit = 20f,
+                difficultyLevel = 7,
+                correctValue = 8849f,
+                tolerance = 100f,
+                valueUnit = "m"
+            },
+            new QuestionData
+            {
+                questionId = "q11",
+                questionType = QuestionType.Tahmin,
+                category = QuestionCategory.Bilim,
+                questionText = "Isik saniyede yaklasik kac kilometre yol alir?",
+                timeLimit = 20f,
+                difficultyLevel = 6,
+                correctValue = 300000f,
+                tolerance = 5000f,
+                valueUnit = "km"
+            },
+            new QuestionData
+            {
+                questionId = "q12",
+                questionType = QuestionType.Tahmin,
+                category = QuestionCategory.Tarih,
+                questionText = "Turkiye Cumhuriyeti hangi yil ilan edilmistir?",
+                timeLimit = 15f,
+                difficultyLevel = 3,
+                correctValue = 1923f,
+                tolerance = 0f,
+                valueUnit = "yil"
             }
         };
         private int demoQuestionIndex = 0;
@@ -453,6 +593,168 @@ namespace BilVeFethet.Managers
             SubmitAnswer(optionIndex);
         }
 
+        private void HandleEstimationSubmitted(float value)
+        {
+            SubmitEstimationAnswer(value);
+        }
+
+        private void HandleJokerUsed(JokerType jokerType)
+        {
+            if (currentQuestion == null) return;
+
+            Debug.Log($"[InGameFlowManager] Joker used: {jokerType}");
+
+            // Joker sonucunu hesapla (yerel)
+            var result = CalculateJokerResult(jokerType);
+
+            if (result != null && result.success)
+            {
+                // Sonucu UI'ya uygula
+                switch (jokerType)
+                {
+                    case JokerType.Yuzde50:
+                        GameUIManager.Instance?.Apply5050Result(result.eliminatedOptionIndices);
+                        break;
+                    case JokerType.OyuncularaSor:
+                        GameUIManager.Instance?.ShowAudienceResult(result.audiencePercentages);
+                        break;
+                    case JokerType.Papagan:
+                        GameUIManager.Instance?.ShowParrotHint(result.parrotHint, result.hintAccuracy);
+                        break;
+                    case JokerType.Teleskop:
+                        GameUIManager.Instance?.ShowTelescopeOptions(result.telescopeOptions);
+                        break;
+                }
+
+                // Event tetikle
+                GameEvents.TriggerJokerResultReceived(result);
+            }
+        }
+
+        private JokerUseResult CalculateJokerResult(JokerType jokerType)
+        {
+            if (currentQuestion == null) return null;
+
+            var result = new JokerUseResult
+            {
+                jokerType = jokerType,
+                success = true
+            };
+
+            switch (jokerType)
+            {
+                case JokerType.Yuzde50:
+                    if (currentQuestion.questionType != QuestionType.CoktanSecmeli)
+                    {
+                        result.success = false;
+                        result.errorMessage = "Bu joker sadece çoktan seçmeli sorularda kullanılabilir";
+                        return result;
+                    }
+
+                    // 2 yanlış şıkkı ele
+                    var wrongOptions = new List<int>();
+                    for (int i = 0; i < currentQuestion.options.Count; i++)
+                    {
+                        if (i != currentQuestion.correctAnswerIndex)
+                            wrongOptions.Add(i);
+                    }
+
+                    // Rastgele 2 tanesini seç
+                    result.eliminatedOptionIndices = new List<int>();
+                    while (result.eliminatedOptionIndices.Count < 2 && wrongOptions.Count > 0)
+                    {
+                        int randomIndex = UnityEngine.Random.Range(0, wrongOptions.Count);
+                        result.eliminatedOptionIndices.Add(wrongOptions[randomIndex]);
+                        wrongOptions.RemoveAt(randomIndex);
+                    }
+                    break;
+
+                case JokerType.OyuncularaSor:
+                    if (currentQuestion.questionType != QuestionType.CoktanSecmeli)
+                    {
+                        result.success = false;
+                        result.errorMessage = "Bu joker sadece çoktan seçmeli sorularda kullanılabilir";
+                        return result;
+                    }
+
+                    // Simüle edilmiş oyuncu yüzdeleri
+                    result.audiencePercentages = new Dictionary<int, float>();
+                    float remainingPercent = 100f;
+                    int correctIndex = currentQuestion.correctAnswerIndex;
+
+                    // Doğru cevaba yüksek yüzde ver
+                    float correctPercent = UnityEngine.Random.Range(40f, 70f);
+                    result.audiencePercentages[correctIndex] = correctPercent;
+                    remainingPercent -= correctPercent;
+
+                    // Diğer seçeneklere dağıt
+                    for (int i = 0; i < currentQuestion.options.Count; i++)
+                    {
+                        if (i == correctIndex) continue;
+
+                        float percent = i == currentQuestion.options.Count - 1
+                            ? remainingPercent
+                            : UnityEngine.Random.Range(5f, remainingPercent / 2f);
+                        result.audiencePercentages[i] = percent;
+                        remainingPercent -= percent;
+                    }
+                    break;
+
+                case JokerType.Papagan:
+                    if (currentQuestion.questionType != QuestionType.Tahmin)
+                    {
+                        result.success = false;
+                        result.errorMessage = "Bu joker sadece tahmin sorularında kullanılabilir";
+                        return result;
+                    }
+
+                    // Doğru değere yakın bir tahmin ver
+                    result.hintAccuracy = UnityEngine.Random.Range(0.85f, 0.98f);
+                    float errorMargin = currentQuestion.correctValue * (1f - result.hintAccuracy);
+                    result.parrotHint = currentQuestion.correctValue + UnityEngine.Random.Range(-errorMargin, errorMargin);
+                    break;
+
+                case JokerType.Teleskop:
+                    if (currentQuestion.questionType != QuestionType.Tahmin)
+                    {
+                        result.success = false;
+                        result.errorMessage = "Bu joker sadece tahmin sorularında kullanılabilir";
+                        return result;
+                    }
+
+                    // 4 seçenek sun (biri doğru)
+                    result.telescopeOptions = new List<TelescopeOption>();
+                    float correct = currentQuestion.correctValue;
+                    float range = correct * 0.3f; // %30 aralık
+
+                    // Doğru değer
+                    result.telescopeOptions.Add(new TelescopeOption { optionText = correct.ToString("N0"), isCorrect = true });
+
+                    // 3 yanlış değer
+                    result.telescopeOptions.Add(new TelescopeOption { optionText = (correct - range).ToString("N0"), isCorrect = false });
+                    result.telescopeOptions.Add(new TelescopeOption { optionText = (correct + range).ToString("N0"), isCorrect = false });
+                    result.telescopeOptions.Add(new TelescopeOption { optionText = (correct + range * 2f).ToString("N0"), isCorrect = false });
+
+                    // Karıştır
+                    for (int i = result.telescopeOptions.Count - 1; i > 0; i--)
+                    {
+                        int j = UnityEngine.Random.Range(0, i + 1);
+                        var temp = result.telescopeOptions[i];
+                        result.telescopeOptions[i] = result.telescopeOptions[j];
+                        result.telescopeOptions[j] = temp;
+                    }
+                    break;
+            }
+
+            return result;
+        }
+
+        private void HandleJokerResult(JokerUseResult result)
+        {
+            // Sunucudan gelen joker sonucu
+            Debug.Log($"[InGameFlowManager] Joker result received: {result.jokerType}, Success: {result.success}");
+        }
+
         private void HandleTimeUp()
         {
             if (!isWaitingForAnswer) return;
@@ -462,8 +764,25 @@ namespace BilVeFethet.Managers
             // Süre doldu - yanlış cevap olarak işle
             UpdateLocalPlayerScore(false, 0);
 
-            string correctAnswer = currentQuestion?.options[currentQuestion.correctAnswerIndex] ?? "";
-            GameUIManager.Instance?.ShowAnswerResult(false, 0, correctAnswer, questionAnswerDelay);
+            if (currentQuestion?.questionType == QuestionType.Tahmin)
+            {
+                // Tahmin sorusu için
+                GameUIManager.Instance?.ShowEstimationResult(
+                    false,
+                    0,
+                    currentQuestion.correctValue,
+                    0,
+                    0,
+                    currentQuestion.valueUnit,
+                    questionAnswerDelay
+                );
+            }
+            else
+            {
+                // Çoktan seçmeli için
+                string correctAnswer = currentQuestion?.options[currentQuestion.correctAnswerIndex] ?? "";
+                GameUIManager.Instance?.ShowAnswerResult(false, 0, correctAnswer, questionAnswerDelay);
+            }
 
             StartCoroutine(NextQuestionSequence());
         }
