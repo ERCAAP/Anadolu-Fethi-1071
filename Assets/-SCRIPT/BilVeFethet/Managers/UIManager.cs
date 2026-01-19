@@ -11,8 +11,8 @@ using UnityEngine.UI;
 namespace BilVeFethet.Managers
 {
     /// <summary>
-    /// UI yoneticisi - tum ekran ve panel gecislerini yonetir
-    /// Event-driven mimari ile manager'lardan bagimsiz
+    /// UI yöneticisi - tüm ekran ve panel geçişlerini yönetir
+    /// Event-driven mimari ile manager'lardan bağımsız
     /// </summary>
     public class UIManager : Singleton<UIManager>
     {
@@ -557,8 +557,8 @@ namespace BilVeFethet.Managers
 
         private void ShowParrotHint(float hint)
         {
-            // Tahmin sorusu icin ipucu goster
-            Debug.Log($"Papagan ipucu: {hint}");
+            // Tahmin sorusu için ipucu göster
+            Debug.Log($"Papağan ipucu: {hint}");
         }
 
         #endregion
@@ -631,9 +631,9 @@ namespace BilVeFethet.Managers
             {
                 phaseText.text = phase switch
                 {
-                    GamePhase.Fetih => "FETIH ASAMASI",
-                    GamePhase.Savas => "SAVAS ASAMASI",
-                    GamePhase.GameOver => "OYUN BITTI",
+                    GamePhase.Fetih => "FETİH AŞAMASI",
+                    GamePhase.Savas => "SAVAŞ AŞAMASI",
+                    GamePhase.GameOver => "OYUN BİTTİ",
                     _ => ""
                 };
             }
@@ -644,7 +644,7 @@ namespace BilVeFethet.Managers
             var player = GameManager.Instance?.GameState?.GetPlayer(playerId);
             if (player != null && turnIndicatorText != null)
             {
-                turnIndicatorText.text = $"Sira: {player.displayName}";
+                turnIndicatorText.text = $"Sıra: {player.displayName}";
                 turnIndicatorText.color = GetPlayerColor(player.color);
             }
         }
@@ -655,12 +655,12 @@ namespace BilVeFethet.Managers
 
         private void ShowTerritorySelectionUI(int count)
         {
-            Debug.Log($"Toprak secimi: {count} toprak secebilirsiniz");
+            Debug.Log($"Toprak seçimi: {count} toprak seçebilirsiniz");
         }
 
         private void ShowAttackSelectionUI()
         {
-            Debug.Log("Saldiri hedefi secin");
+            Debug.Log("Saldırı hedefi seçin");
         }
 
         #endregion
@@ -696,13 +696,14 @@ namespace BilVeFethet.Managers
         {
             return category switch
             {
-                QuestionCategory.Turkce => "Turkce",
-                QuestionCategory.Ingilizce => "Ingilizce",
-                QuestionCategory.Bilim => "Bilim",
-                QuestionCategory.Sanat => "Sanat",
-                QuestionCategory.Spor => "Spor",
-                QuestionCategory.GenelKultur => "Genel Kultur",
                 QuestionCategory.Tarih => "Tarih",
+                QuestionCategory.Bilim => "Bilim",
+                QuestionCategory.Eglence => "Eğlence",
+                QuestionCategory.GenelKultur => "Genel Kültür",
+                QuestionCategory.Spor => "Spor",
+                QuestionCategory.Cografya => "Coğrafya",
+                QuestionCategory.Sanat => "Sanat",
+                QuestionCategory.Teknoloji => "Teknoloji",
                 _ => "Bilinmeyen"
             };
         }
@@ -726,7 +727,7 @@ namespace BilVeFethet.Managers
 
         #region Loading Screen
 
-        public void ShowLoading(string message = "Yukleniyor...")
+        public void ShowLoading(string message = "Yükleniyor...")
         {
             SetUIState(UIState.Loading);
         }

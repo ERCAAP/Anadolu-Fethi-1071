@@ -68,27 +68,18 @@ namespace BilVeFethet.Enums
     }
 
     /// <summary>
-    /// Soru zorluk seviyeleri
-    /// </summary>
-    public enum QuestionDifficulty
-    {
-        Kolay = 0,   // Kolay sorular
-        Orta = 1,    // Orta zorlukta sorular
-        Zor = 2      // Zor sorular
-    }
-
-    /// <summary>
     /// Soru kategorileri
     /// </summary>
     public enum QuestionCategory
     {
-        Turkce = 0,          // Türkçe dil bilgisi
-        Ingilizce = 1,       // İngilizce
-        Bilim = 2,           // Bilim ve doğa
-        Sanat = 3,           // Sanat ve edebiyat
-        Spor = 4,            // Spor
-        GenelKultur = 5,     // Genel kültür
-        Tarih = 6            // Tarih
+        Tarih = 0,
+        Bilim = 1,
+        Eglence = 2,
+        GenelKultur = 3,
+        Spor = 4,
+        Cografya = 5,
+        Sanat = 6,
+        Teknoloji = 7
     }
 
     /// <summary>

@@ -33,29 +33,6 @@ namespace BilVeFethet.Managers
         [SerializeField] private TextMeshProUGUI pointsText;
         [SerializeField] private Transform optionsContainer;
         [SerializeField] private GameObject optionButtonPrefab;
-
-        [Header("Tahmin Sorusu UI")]
-        [SerializeField] private GameObject estimationContainer;
-        [SerializeField] private TMP_InputField estimationInputField;
-        [SerializeField] private Button estimationSubmitButton;
-        [SerializeField] private TextMeshProUGUI estimationUnitText;
-        [SerializeField] private TextMeshProUGUI estimationHintText;
-        [SerializeField] private Slider estimationSlider;
-        [SerializeField] private TextMeshProUGUI estimationSliderValueText;
-
-        [Header("Joker Butonları")]
-        [SerializeField] private GameObject jokerContainer;
-        [SerializeField] private Button joker5050Button;
-        [SerializeField] private Button jokerAudienceButton;
-        [SerializeField] private Button jokerParrotButton;
-        [SerializeField] private Button jokerTelescopeButton;
-        [SerializeField] private TextMeshProUGUI joker5050CountText;
-        [SerializeField] private TextMeshProUGUI jokerAudienceCountText;
-        [SerializeField] private TextMeshProUGUI jokerParrotCountText;
-        [SerializeField] private TextMeshProUGUI jokerTelescopeCountText;
-        [SerializeField] private GameObject audienceResultPanel;
-        [SerializeField] private Image[] audienceBarImages;
-        [SerializeField] private TextMeshProUGUI[] audiencePercentTexts;
         
         [Header("Zamanlayıcı")]
         [SerializeField] private TextMeshProUGUI timerText;
@@ -104,13 +81,11 @@ namespace BilVeFethet.Managers
         
         // Events
         public event Action<int> OnOptionSelected;
-        public event Action<float> OnEstimationSubmitted;
         public event Action OnTimeUp;
         public event Action OnPlayAgainClicked;
         public event Action OnMainMenuClicked;
         public event Action OnPauseClicked;
         public event Action OnResumeClicked;
-        public event Action<JokerType> OnJokerUsed;
         
         // State
         private List<GameObject> optionButtons = new List<GameObject>();
@@ -122,9 +97,6 @@ namespace BilVeFethet.Managers
         private int selectedOptionIndex = -1;
         private int currentQuestionIndex = 0;
         private List<string> lastQuestionOptions;
-        private QuestionData currentQuestion;
-        private List<int> eliminatedOptions = new List<int>();
-        private float submittedEstimation = 0f;
         
         // Properties
         public bool IsAnswered => isAnswered;
@@ -149,8 +121,6 @@ namespace BilVeFethet.Managers
         private void Start()
         {
             SubscribeToEvents();
-            SetupJokerButtons();
-            SetupEstimationUI();
             HideAllPanels();
         }
         
@@ -235,24 +205,21 @@ namespace BilVeFethet.Managers
         {
             isAnswered = false;
             selectedOptionIndex = -1;
-            submittedEstimation = 0f;
-            eliminatedOptions.Clear();
-            currentQuestion = question;
-
+            
             ShowGamePanel();
-
+            
             // Soru metni
             if (questionText != null)
                 questionText.text = question.questionText;
-
+                
             // Kategori
             if (categoryText != null)
-                categoryText.text = GetCategoryDisplayName(question.category);
-
+                categoryText.text = $"Kategori: {question.category}";
+                
             // Soru numarası
             if (questionNumberText != null)
                 questionNumberText.text = $"Soru {questionNumber}/{totalQuestions}";
-
+                
             // Zorluk (1-10 arası seviye)
             if (difficultyText != null)
             {
@@ -263,8 +230,7 @@ namespace BilVeFethet.Managers
                     <= 8 => "Zor",
                     _ => "Uzman"
                 };
-                difficultyText.text = difficultyStr;
-                difficultyText.color = GetDifficultyColor(question.difficultyLevel);
+                difficultyText.text = $"Zorluk: {difficultyStr}";
             }
 
             // Puan (zorluk seviyesine göre hesaplanır)
@@ -272,75 +238,12 @@ namespace BilVeFethet.Managers
             if (pointsText != null)
                 pointsText.text = $"+{questionPoints} TP";
 
-            // Soru tipine göre UI göster
-            bool isMultipleChoice = question.questionType == QuestionType.CoktanSecmeli;
-
-            // Çoktan seçmeli container
-            if (optionsContainer != null)
-                optionsContainer.gameObject.SetActive(isMultipleChoice);
-
-            // Tahmin container
-            SetPanelActive(estimationContainer, !isMultipleChoice);
-
-            // Joker paneli - soru tipine göre uygun jokerler
-            UpdateJokerButtons(question.questionType);
-
-            // Audience result panelini gizle
-            SetPanelActive(audienceResultPanel, false);
-
-            if (isMultipleChoice)
-            {
-                // Seçenekleri kaydet ve oluştur
-                lastQuestionOptions = question.options;
-                CreateOptions(question.options);
-            }
-            else
-            {
-                // Tahmin sorusu UI ayarla
-                SetupEstimationForQuestion(question);
-            }
-
+            // Seçenekleri kaydet ve oluştur
+            lastQuestionOptions = question.options;
+            CreateOptions(question.options);
+            
             // Zamanlayıcıyı başlat
-            StartTimer(question.timeLimit > 0 ? question.timeLimit : questionTime);
-        }
-
-        /// <summary>
-        /// Tahmin sorusu için UI ayarla
-        /// </summary>
-        private void SetupEstimationForQuestion(QuestionData question)
-        {
-            if (estimationInputField != null)
-            {
-                estimationInputField.text = "";
-                estimationInputField.interactable = true;
-                estimationInputField.contentType = TMP_InputField.ContentType.DecimalNumber;
-            }
-
-            if (estimationUnitText != null)
-                estimationUnitText.text = !string.IsNullOrEmpty(question.valueUnit) ? question.valueUnit : "";
-
-            if (estimationHintText != null)
-            {
-                // İpucu göster (örn: "Yıl olarak giriniz")
-                string hint = question.valueUnit switch
-                {
-                    "yil" or "yıl" => "Yıl olarak giriniz",
-                    "km" => "Kilometre olarak giriniz",
-                    "kg" => "Kilogram olarak giriniz",
-                    "m" => "Metre olarak giriniz",
-                    _ => "Sayısal değer giriniz"
-                };
-                estimationHintText.text = hint;
-            }
-
-            if (estimationSubmitButton != null)
-                estimationSubmitButton.interactable = true;
-
-            // Slider varsa ayarla
-            if (estimationSlider != null)
-            {
-                estimationSlider.gameObject.SetActive(false); // Varsayılan olarak gizli
-            }
+            StartTimer(questionTime);
         }
         
         /// <summary>
@@ -349,13 +252,7 @@ namespace BilVeFethet.Managers
         public void ShowAnswerResult(bool isCorrect, int points, string correctAnswer, float displayTime = 2f)
         {
             SetPanelActive(answerResultPanel, true);
-
-            // Çoktan seçmeli cevapları vurgula
-            if (currentQuestion != null && currentQuestion.questionType == QuestionType.CoktanSecmeli)
-            {
-                HighlightCorrectAndWrongAnswers(currentQuestion.correctAnswerIndex);
-            }
-
+            
             if (isCorrect)
             {
                 if (answerResultIcon != null)
@@ -364,14 +261,11 @@ namespace BilVeFethet.Managers
                     answerResultText.text = "DOĞRU!";
                 if (answerPointsText != null)
                     answerPointsText.text = $"+{points} TP";
-
+                    
                 // Skor popup göster
                 ShowScorePopup(points, true);
-
-                // Başarı sesi ve animasyon
-                PlayCorrectAnswerAnimation();
             }
-            else if (selectedOptionIndex == -1 && submittedEstimation == 0f) // Süre doldu
+            else if (selectedOptionIndex == -1) // Süre doldu
             {
                 if (answerResultIcon != null)
                     answerResultIcon.color = timeoutColor;
@@ -379,9 +273,6 @@ namespace BilVeFethet.Managers
                     answerResultText.text = "SÜRE DOLDU!";
                 if (answerPointsText != null)
                     answerPointsText.text = "0 TP";
-
-                // Timeout animasyonu
-                PlayTimeoutAnimation();
             }
             else
             {
@@ -391,101 +282,12 @@ namespace BilVeFethet.Managers
                     answerResultText.text = "YANLIŞ!";
                 if (answerPointsText != null)
                     answerPointsText.text = "0 TP";
-
-                // Yanlış cevap animasyonu
-                PlayWrongAnswerAnimation();
             }
-
+            
             if (correctAnswerText != null)
                 correctAnswerText.text = $"Doğru Cevap: {correctAnswer}";
-
+                
             StartCoroutine(HideAnswerResultAfterDelay(displayTime));
-        }
-
-        /// <summary>
-        /// Tahmin sorusu cevap sonucunu göster
-        /// </summary>
-        public void ShowEstimationResult(bool isCorrect, int points, float correctValue, float guessedValue, float accuracy, string unit, float displayTime = 2f)
-        {
-            SetPanelActive(answerResultPanel, true);
-
-            if (isCorrect)
-            {
-                if (answerResultIcon != null)
-                    answerResultIcon.color = correctColor;
-                if (answerResultText != null)
-                    answerResultText.text = accuracy >= 100f ? "MÜKEMMEL!" : "DOĞRU!";
-                if (answerPointsText != null)
-                    answerPointsText.text = $"+{points} TP";
-
-                ShowScorePopup(points, true);
-                PlayCorrectAnswerAnimation();
-            }
-            else if (submittedEstimation == 0f) // Süre doldu
-            {
-                if (answerResultIcon != null)
-                    answerResultIcon.color = timeoutColor;
-                if (answerResultText != null)
-                    answerResultText.text = "SÜRE DOLDU!";
-                if (answerPointsText != null)
-                    answerPointsText.text = "0 TP";
-
-                PlayTimeoutAnimation();
-            }
-            else
-            {
-                if (answerResultIcon != null)
-                    answerResultIcon.color = wrongColor;
-                if (answerResultText != null)
-                    answerResultText.text = $"YANLIŞ! (%{accuracy:F0} doğruluk)";
-                if (answerPointsText != null)
-                    answerPointsText.text = "0 TP";
-
-                PlayWrongAnswerAnimation();
-            }
-
-            if (correctAnswerText != null)
-            {
-                string unitStr = !string.IsNullOrEmpty(unit) ? $" {unit}" : "";
-                correctAnswerText.text = $"Doğru Cevap: {correctValue:N0}{unitStr}\nSenin Tahminin: {guessedValue:N0}{unitStr}";
-            }
-
-            StartCoroutine(HideAnswerResultAfterDelay(displayTime));
-        }
-
-        /// <summary>
-        /// Doğru ve yanlış cevapları vurgula
-        /// </summary>
-        private void HighlightCorrectAndWrongAnswers(int correctIndex)
-        {
-            for (int i = 0; i < optionButtons.Count; i++)
-            {
-                var buttonImage = optionButtons[i].GetComponent<Image>();
-                if (buttonImage == null) continue;
-
-                if (i == correctIndex)
-                {
-                    // Doğru cevap - yeşil
-                    buttonImage.color = correctColor;
-                    StartCoroutine(PulseAnimation(optionButtons[i].transform));
-                }
-                else if (i == selectedOptionIndex)
-                {
-                    // Seçilen yanlış cevap - kırmızı
-                    buttonImage.color = wrongColor;
-                    StartCoroutine(ShakeAnimation(optionButtons[i].transform));
-                }
-                else if (eliminatedOptions.Contains(i))
-                {
-                    // %50 jokeri ile elenen - gri
-                    buttonImage.color = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-                }
-                else
-                {
-                    // Diğer seçenekler - hafif soluk
-                    buttonImage.color = new Color(0.5f, 0.5f, 0.5f, 0.7f);
-                }
-            }
         }
         
         /// <summary>
@@ -665,40 +467,28 @@ namespace BilVeFethet.Managers
         private void SelectOption(int index)
         {
             if (isAnswered) return;
-
+            
             isAnswered = true;
             selectedOptionIndex = index;
-
+            
             // Zamanlayıcıyı durdur
             StopTimer();
-
-            // Seçilen butonu vurgula ve animasyon uygula
+            
+            // Seçilen butonu vurgula
             if (index >= 0 && index < optionButtons.Count)
             {
                 var selectedBtn = optionButtons[index].GetComponent<Image>();
                 if (selectedBtn != null)
-                    selectedBtn.color = new Color(0.3f, 0.5f, 0.9f);
-
-                // Seçim animasyonu
-                StartCoroutine(OptionSelectAnimation(optionButtons[index].transform));
+                    selectedBtn.color = new Color(0.4f, 0.6f, 0.8f);
             }
-
-            // Diğer butonları devre dışı bırak ve soluk göster
-            for (int i = 0; i < optionButtons.Count; i++)
+            
+            // Diğer butonları devre dışı bırak
+            foreach (var btn in optionButtons)
             {
-                var btn = optionButtons[i];
                 var button = btn.GetComponent<Button>();
                 if (button != null) button.interactable = false;
-
-                // Seçilmeyen butonları soluk göster
-                if (i != index && !eliminatedOptions.Contains(i))
-                {
-                    var image = btn.GetComponent<Image>();
-                    if (image != null)
-                        image.color = new Color(0.6f, 0.6f, 0.6f, 0.7f);
-                }
             }
-
+            
             // Event'i tetikle
             OnOptionSelected?.Invoke(index);
         }
@@ -996,418 +786,6 @@ namespace BilVeFethet.Managers
                 <= 9 => 250,
                 _ => 300
             };
-        }
-
-        private string GetCategoryDisplayName(QuestionCategory category)
-        {
-            return category switch
-            {
-                QuestionCategory.Turkce => "Türkçe",
-                QuestionCategory.Ingilizce => "İngilizce",
-                QuestionCategory.Bilim => "Bilim",
-                QuestionCategory.Sanat => "Sanat",
-                QuestionCategory.Spor => "Spor",
-                QuestionCategory.GenelKultur => "Genel Kültür",
-                QuestionCategory.Tarih => "Tarih",
-                _ => "Bilinmeyen"
-            };
-        }
-
-        private Color GetDifficultyColor(int difficultyLevel)
-        {
-            return difficultyLevel switch
-            {
-                <= 3 => new Color(0.3f, 0.9f, 0.4f), // Yeşil - Kolay
-                <= 6 => new Color(0.9f, 0.8f, 0.2f), // Sarı - Orta
-                <= 8 => new Color(0.9f, 0.5f, 0.2f), // Turuncu - Zor
-                _ => new Color(0.9f, 0.2f, 0.2f)     // Kırmızı - Uzman
-            };
-        }
-
-        #endregion
-
-        #region Setup Methods
-
-        private void SetupJokerButtons()
-        {
-            if (joker5050Button != null)
-                joker5050Button.onClick.AddListener(() => UseJoker(JokerType.Yuzde50));
-
-            if (jokerAudienceButton != null)
-                jokerAudienceButton.onClick.AddListener(() => UseJoker(JokerType.OyuncularaSor));
-
-            if (jokerParrotButton != null)
-                jokerParrotButton.onClick.AddListener(() => UseJoker(JokerType.Papagan));
-
-            if (jokerTelescopeButton != null)
-                jokerTelescopeButton.onClick.AddListener(() => UseJoker(JokerType.Teleskop));
-        }
-
-        private void SetupEstimationUI()
-        {
-            if (estimationSubmitButton != null)
-                estimationSubmitButton.onClick.AddListener(SubmitEstimation);
-
-            if (estimationInputField != null)
-            {
-                estimationInputField.onEndEdit.AddListener(OnEstimationInputEndEdit);
-            }
-
-            if (estimationSlider != null)
-            {
-                estimationSlider.onValueChanged.AddListener(OnEstimationSliderChanged);
-            }
-        }
-
-        private void UpdateJokerButtons(QuestionType questionType)
-        {
-            if (jokerContainer != null)
-                jokerContainer.SetActive(true);
-
-            // %50 jokeri - sadece çoktan seçmeli
-            if (joker5050Button != null)
-            {
-                joker5050Button.gameObject.SetActive(questionType == QuestionType.CoktanSecmeli);
-                // TODO: Joker kullanım hakkı kontrolü
-            }
-
-            // Oyunculara sor - sadece çoktan seçmeli
-            if (jokerAudienceButton != null)
-            {
-                jokerAudienceButton.gameObject.SetActive(questionType == QuestionType.CoktanSecmeli);
-            }
-
-            // Papağan - sadece tahmin soruları
-            if (jokerParrotButton != null)
-            {
-                jokerParrotButton.gameObject.SetActive(questionType == QuestionType.Tahmin);
-            }
-
-            // Teleskop - sadece tahmin soruları
-            if (jokerTelescopeButton != null)
-            {
-                jokerTelescopeButton.gameObject.SetActive(questionType == QuestionType.Tahmin);
-            }
-        }
-
-        #endregion
-
-        #region Joker Methods
-
-        private void UseJoker(JokerType jokerType)
-        {
-            if (isAnswered) return;
-
-            OnJokerUsed?.Invoke(jokerType);
-            GameEvents.TriggerJokerUsed(PlayerManager.Instance?.LocalPlayerData?.playerId ?? "", jokerType);
-        }
-
-        /// <summary>
-        /// %50 joker sonucunu uygula
-        /// </summary>
-        public void Apply5050Result(List<int> eliminatedIndices)
-        {
-            if (eliminatedIndices == null) return;
-
-            eliminatedOptions.AddRange(eliminatedIndices);
-
-            foreach (int index in eliminatedIndices)
-            {
-                if (index >= 0 && index < optionButtons.Count)
-                {
-                    var button = optionButtons[index].GetComponent<Button>();
-                    var image = optionButtons[index].GetComponent<Image>();
-
-                    if (button != null)
-                        button.interactable = false;
-
-                    if (image != null)
-                        image.color = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-
-                    // X işareti göster
-                    var texts = optionButtons[index].GetComponentsInChildren<TextMeshProUGUI>();
-                    if (texts.Length > 0)
-                        texts[0].text = "✗";
-                }
-            }
-
-            if (joker5050Button != null)
-                joker5050Button.interactable = false;
-        }
-
-        /// <summary>
-        /// Oyunculara sor joker sonucunu göster
-        /// </summary>
-        public void ShowAudienceResult(Dictionary<int, float> percentages)
-        {
-            if (percentages == null) return;
-
-            SetPanelActive(audienceResultPanel, true);
-
-            foreach (var kvp in percentages)
-            {
-                if (kvp.Key >= 0 && kvp.Key < audienceBarImages.Length && audienceBarImages[kvp.Key] != null)
-                {
-                    audienceBarImages[kvp.Key].fillAmount = kvp.Value / 100f;
-                }
-
-                if (kvp.Key >= 0 && kvp.Key < audiencePercentTexts.Length && audiencePercentTexts[kvp.Key] != null)
-                {
-                    audiencePercentTexts[kvp.Key].text = $"%{kvp.Value:F0}";
-                }
-
-                // Butona da yüzde ekle
-                if (kvp.Key >= 0 && kvp.Key < optionButtons.Count)
-                {
-                    var texts = optionButtons[kvp.Key].GetComponentsInChildren<TextMeshProUGUI>();
-                    if (texts.Length >= 2)
-                        texts[1].text += $" (%{kvp.Value:F0})";
-                }
-            }
-
-            if (jokerAudienceButton != null)
-                jokerAudienceButton.interactable = false;
-        }
-
-        /// <summary>
-        /// Papağan joker sonucunu göster
-        /// </summary>
-        public void ShowParrotHint(float hint, float accuracy)
-        {
-            if (estimationHintText != null)
-            {
-                string accuracyStr = accuracy >= 0.95f ? "çok yakın" : accuracy >= 0.85f ? "yakın" : "tahmini";
-                estimationHintText.text = $"Papağan tahmini ({accuracyStr}): {hint:N0}";
-                estimationHintText.color = correctColor;
-            }
-
-            if (jokerParrotButton != null)
-                jokerParrotButton.interactable = false;
-        }
-
-        /// <summary>
-        /// Teleskop joker sonucunu göster
-        /// </summary>
-        public void ShowTelescopeOptions(List<TelescopeOption> options)
-        {
-            if (options == null || options.Count == 0) return;
-
-            // Mevcut input'u temizle ve dropdown/slider göster
-            if (estimationInputField != null)
-                estimationInputField.gameObject.SetActive(false);
-
-            if (estimationSlider != null)
-            {
-                estimationSlider.gameObject.SetActive(true);
-
-                // Slider değerlerini ayarla
-                float minVal = float.MaxValue;
-                float maxVal = float.MinValue;
-
-                foreach (var opt in options)
-                {
-                    if (float.TryParse(opt.optionText, out float val))
-                    {
-                        minVal = Mathf.Min(minVal, val);
-                        maxVal = Mathf.Max(maxVal, val);
-                    }
-                }
-
-                estimationSlider.minValue = minVal;
-                estimationSlider.maxValue = maxVal;
-                estimationSlider.value = (minVal + maxVal) / 2f;
-            }
-
-            if (jokerTelescopeButton != null)
-                jokerTelescopeButton.interactable = false;
-        }
-
-        #endregion
-
-        #region Estimation Input
-
-        private void SubmitEstimation()
-        {
-            if (isAnswered) return;
-
-            float value = 0f;
-
-            if (estimationSlider != null && estimationSlider.gameObject.activeSelf)
-            {
-                value = estimationSlider.value;
-            }
-            else if (estimationInputField != null && float.TryParse(estimationInputField.text, out float inputValue))
-            {
-                value = inputValue;
-            }
-            else
-            {
-                // Geçersiz giriş - uyarı göster
-                if (estimationHintText != null)
-                {
-                    estimationHintText.text = "Geçerli bir sayı giriniz!";
-                    estimationHintText.color = wrongColor;
-                }
-                return;
-            }
-
-            isAnswered = true;
-            submittedEstimation = value;
-
-            // Input'u devre dışı bırak
-            if (estimationInputField != null)
-                estimationInputField.interactable = false;
-
-            if (estimationSubmitButton != null)
-                estimationSubmitButton.interactable = false;
-
-            if (estimationSlider != null)
-                estimationSlider.interactable = false;
-
-            // Zamanlayıcıyı durdur
-            StopTimer();
-
-            // Event'i tetikle
-            OnEstimationSubmitted?.Invoke(value);
-        }
-
-        private void OnEstimationInputEndEdit(string value)
-        {
-            // Enter tuşuna basıldığında gönder
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
-            {
-                SubmitEstimation();
-            }
-        }
-
-        private void OnEstimationSliderChanged(float value)
-        {
-            if (estimationSliderValueText != null)
-            {
-                estimationSliderValueText.text = value.ToString("N0");
-            }
-        }
-
-        #endregion
-
-        #region Animations
-
-        private void PlayCorrectAnswerAnimation()
-        {
-            if (answerResultPanel != null)
-            {
-                StartCoroutine(PulseAnimation(answerResultPanel.transform));
-            }
-        }
-
-        private void PlayWrongAnswerAnimation()
-        {
-            if (answerResultPanel != null)
-            {
-                StartCoroutine(ShakeAnimation(answerResultPanel.transform));
-            }
-        }
-
-        private void PlayTimeoutAnimation()
-        {
-            if (answerResultPanel != null)
-            {
-                StartCoroutine(FadeInAnimation(answerResultPanel.GetComponent<CanvasGroup>()));
-            }
-        }
-
-        private IEnumerator PulseAnimation(Transform target)
-        {
-            if (target == null) yield break;
-
-            Vector3 originalScale = target.localScale;
-            float duration = 0.3f;
-            float elapsed = 0f;
-
-            // Büyüt
-            while (elapsed < duration / 2f)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / (duration / 2f);
-                target.localScale = Vector3.Lerp(originalScale, originalScale * 1.1f, t);
-                yield return null;
-            }
-
-            elapsed = 0f;
-            // Küçült
-            while (elapsed < duration / 2f)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / (duration / 2f);
-                target.localScale = Vector3.Lerp(originalScale * 1.1f, originalScale, t);
-                yield return null;
-            }
-
-            target.localScale = originalScale;
-        }
-
-        private IEnumerator ShakeAnimation(Transform target)
-        {
-            if (target == null) yield break;
-
-            Vector3 originalPosition = target.localPosition;
-            float duration = 0.3f;
-            float elapsed = 0f;
-            float shakeAmount = 10f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float x = Mathf.Sin(elapsed * 50f) * shakeAmount * (1f - elapsed / duration);
-                target.localPosition = originalPosition + new Vector3(x, 0, 0);
-                yield return null;
-            }
-
-            target.localPosition = originalPosition;
-        }
-
-        private IEnumerator FadeInAnimation(CanvasGroup canvasGroup)
-        {
-            if (canvasGroup == null) yield break;
-
-            float duration = 0.3f;
-            float elapsed = 0f;
-
-            canvasGroup.alpha = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                canvasGroup.alpha = elapsed / duration;
-                yield return null;
-            }
-
-            canvasGroup.alpha = 1f;
-        }
-
-        private IEnumerator OptionSelectAnimation(Transform target)
-        {
-            if (target == null) yield break;
-
-            Vector3 originalScale = target.localScale;
-
-            // Hızlı küçült
-            target.localScale = originalScale * 0.9f;
-            yield return new WaitForSeconds(0.05f);
-
-            // Normal boyuta dön
-            float duration = 0.15f;
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                target.localScale = Vector3.Lerp(originalScale * 0.9f, originalScale, t);
-                yield return null;
-            }
-
-            target.localScale = originalScale;
         }
 
         #endregion
