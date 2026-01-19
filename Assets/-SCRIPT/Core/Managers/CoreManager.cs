@@ -1,6 +1,5 @@
 using UnityEngine;
 using System.Collections.Generic;
-using AnadoluFethi.Core.Tutorial;
 
 namespace AnadoluFethi.Core
 {
@@ -12,7 +11,6 @@ namespace AnadoluFethi.Core
         [SerializeField] private UIManager _uiManager;
         [SerializeField] private VFXManager _vfxManager;
         [SerializeField] private SoundManager _soundManager;
-        [SerializeField] private TutorialManager _tutorialManager;
 
         private readonly List<IManager> _managers = new List<IManager>();
 
@@ -21,7 +19,6 @@ namespace AnadoluFethi.Core
         public UIManager UI => _uiManager;
         public VFXManager VFX => _vfxManager;
         public SoundManager Sound => _soundManager;
-        public TutorialManager Tutorial => _tutorialManager;
 
         protected override void InitializeSingleton()
         {
@@ -37,7 +34,6 @@ namespace AnadoluFethi.Core
             TryRegisterManager(_uiManager);
             TryRegisterManager(_vfxManager);
             TryRegisterManager(_soundManager);
-            TryRegisterManager(_tutorialManager);
         }
 
         private void TryRegisterManager<T>(T manager) where T : MonoBehaviour, IManager
