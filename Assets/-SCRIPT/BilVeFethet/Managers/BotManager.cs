@@ -44,9 +44,6 @@ namespace BilVeFethet.Managers
             public float jokerUseChance;
             public float estimationAccuracy; // 0-1 arası, tahmin sorularında sapma oranı
             
-            // Bot'un bu oyunda kullandığı jokerler (BotPlayer'da tutulur)
-            public List<JokerType> usedJokersThisGame;
-            
             // In-game state
             public InGamePlayerData inGameData;
             
@@ -58,7 +55,6 @@ namespace BilVeFethet.Managers
                 this.difficulty = difficulty;
                 this.level = UnityEngine.Random.Range(1, 50);
                 this.avatarId = UnityEngine.Random.Range(1, 20);
-                this.usedJokersThisGame = new List<JokerType>();
                 
                 SetDifficultyParams();
                 InitInGameData();
@@ -96,14 +92,13 @@ namespace BilVeFethet.Managers
                 inGameData = new InGamePlayerData
                 {
                     playerId = playerId,
-                    displayName = displayName,
                     color = color,
                     currentScore = 0,
                     correctAnswers = 0,
                     wrongAnswers = 0,
                     ownedTerritories = new List<int>(),
                     isEliminated = false,
-                    castleHealth = 3
+                    usedJokersThisGame = new List<JokerType>()
                 };
             }
         }
@@ -257,7 +252,7 @@ namespace BilVeFethet.Managers
             float delay = UnityEngine.Random.Range(minAnswerDelay, maxAnswerDelay);
             yield return new WaitForSeconds(delay);
             
-            if (question.questionType == QuestionType.CoktanSecmeli)
+            if (question.type == QuestionType.MultipleChoice)
             {
                 // Çoktan seçmeli soru
                 int selectedAnswer = GetBotMultipleChoiceAnswer(bot, question);
@@ -272,12 +267,16 @@ namespace BilVeFethet.Managers
                     if (jokerUsed.HasValue)
                     {
                         GameEvents.TriggerJokerUsed(bot.playerId, jokerUsed.Value);
-                        bot.usedJokersThisGame.Add(jokerUsed.Value);
+                        bot.inGameData.usedJokersThisGame.Add(jokerUsed.Value);
                         
                         // Joker etkisine göre cevabı güncelle
-                        if (jokerUsed.Value == JokerType.Yuzde50)
+                        if (jokerUsed.Value == JokerType.CiftSans)
                         {
-                            // %50 - doğru cevap şansı artar
+                            // İkinci şans - iki cevap seç
+                        }
+                        else if (jokerUsed.Value == JokerType.YariYariya)
+                        {
+                            // Yarı yarıya - doğru cevap şansı artar
                             selectedAnswer = GetBotAnswerAfterFiftyFifty(bot, question);
                         }
                     }
@@ -288,26 +287,22 @@ namespace BilVeFethet.Managers
                     playerId = bot.playerId,
                     questionId = question.questionId,
                     selectedAnswerIndex = selectedAnswer,
-                    answerTime = delay
+                    answerTime = delay,
+                    jokerUsed = jokerUsed
                 };
-                
-                if (jokerUsed.HasValue)
-                {
-                    answerData.usedJokers.Add(jokerUsed.Value);
-                }
                 
                 GameEvents.TriggerBotAnswerSubmitted(answerData);
             }
             else
             {
                 // Tahmin sorusu
-                float estimation = GetBotEstimationAnswer(bot, question);
+                int estimation = GetBotEstimationAnswer(bot, question);
                 
                 var answerData = new PlayerAnswerData
                 {
                     playerId = bot.playerId,
                     questionId = question.questionId,
-                    guessedValue = estimation,
+                    estimationAnswer = estimation,
                     answerTime = delay
                 };
                 
@@ -327,7 +322,7 @@ namespace BilVeFethet.Managers
             {
                 // Yanlış cevaplardan birini seç
                 List<int> wrongAnswers = new List<int>();
-                for (int i = 0; i < question.options.Count; i++)
+                for (int i = 0; i < question.options.Length; i++)
                 {
                     if (i != question.correctAnswerIndex)
                         wrongAnswers.Add(i);
@@ -348,7 +343,7 @@ namespace BilVeFethet.Managers
             else
             {
                 // Kalan yanlış şık
-                for (int i = 0; i < question.options.Count; i++)
+                for (int i = 0; i < question.options.Length; i++)
                 {
                     if (i != question.correctAnswerIndex)
                         return i;
@@ -357,21 +352,21 @@ namespace BilVeFethet.Managers
             }
         }
         
-        private float GetBotEstimationAnswer(BotPlayer bot, QuestionData question)
+        private int GetBotEstimationAnswer(BotPlayer bot, QuestionData question)
         {
-            float correctAnswer = question.correctValue;
+            int correctAnswer = question.correctEstimationAnswer;
             
             // Sapma hesapla - accuracy yüksekse sapma az olur
             float maxDeviation = correctAnswer * (1f - bot.estimationAccuracy);
             float deviation = UnityEngine.Random.Range(-maxDeviation, maxDeviation);
             
-            return Mathf.Max(0f, correctAnswer + deviation);
+            return Mathf.Max(0, Mathf.RoundToInt(correctAnswer + deviation));
         }
         
         private bool ShouldBotUseJoker(BotPlayer bot, QuestionData question)
         {
             // Zaten bu oyunda çok joker kullandıysa kullanma
-            if (bot.usedJokersThisGame.Count >= 3)
+            if (bot.inGameData.usedJokersThisGame.Count >= 3)
                 return false;
             
             return UnityEngine.Random.value < bot.jokerUseChance;
@@ -383,21 +378,21 @@ namespace BilVeFethet.Managers
             List<JokerType> availableJokers = new List<JokerType>();
             
             // Çoktan seçmeli sorularda kullanılabilecek jokerler
-            if (question.questionType == QuestionType.CoktanSecmeli)
+            if (question.type == QuestionType.MultipleChoice)
             {
-                if (!bot.usedJokersThisGame.Contains(JokerType.Yuzde50))
-                    availableJokers.Add(JokerType.Yuzde50);
-                if (!bot.usedJokersThisGame.Contains(JokerType.OyuncularaSor))
-                    availableJokers.Add(JokerType.OyuncularaSor);
-                if (!bot.usedJokersThisGame.Contains(JokerType.Teleskop))
-                    availableJokers.Add(JokerType.Teleskop);
+                if (!bot.inGameData.usedJokersThisGame.Contains(JokerType.YariYariya))
+                    availableJokers.Add(JokerType.YariYariya);
+                if (!bot.inGameData.usedJokersThisGame.Contains(JokerType.CiftSans))
+                    availableJokers.Add(JokerType.CiftSans);
+                if (!bot.inGameData.usedJokersThisGame.Contains(JokerType.SoruDegistir))
+                    availableJokers.Add(JokerType.SoruDegistir);
             }
             
             // Tahmin sorularında
-            if (question.questionType == QuestionType.Tahmin)
+            if (question.type == QuestionType.Estimation)
             {
-                if (!bot.usedJokersThisGame.Contains(JokerType.Papagan))
-                    availableJokers.Add(JokerType.Papagan);
+                if (!bot.inGameData.usedJokersThisGame.Contains(JokerType.DogruCevap))
+                    availableJokers.Add(JokerType.DogruCevap);
             }
             
             if (availableJokers.Count == 0)
@@ -410,23 +405,20 @@ namespace BilVeFethet.Managers
         
         #region Territory Selection AI
         
-        private void HandleTerritorySelectionForBots(string currentPlayerId, int selectionCount)
+        private void HandleTerritorySelectionForBots(string currentPlayerId, List<int> availableTerritories)
         {
             if (!isBotGameActive) return;
             
             var bot = GetBot(currentPlayerId);
             if (bot != null)
             {
-                StartCoroutine(BotSelectTerritory(bot));
+                StartCoroutine(BotSelectTerritory(bot, availableTerritories));
             }
         }
         
-        private IEnumerator BotSelectTerritory(BotPlayer bot)
+        private IEnumerator BotSelectTerritory(BotPlayer bot, List<int> availableTerritories)
         {
             yield return new WaitForSeconds(territorySelectDelay);
-            
-            var mapData = new MapData();
-            var availableTerritories = mapData.GetEmptyTerritories();
             
             if (availableTerritories.Count == 0) yield break;
             
@@ -434,15 +426,20 @@ namespace BilVeFethet.Managers
             
             // Strateji: Sahip olunan topraklara komşu olan toprakları tercih et
             List<int> adjacentTerritories = new List<int>();
+            var mapData = new MapData();
             
-            foreach (var territory in availableTerritories)
+            foreach (int territory in availableTerritories)
             {
-                foreach (int ownedTerritory in bot.inGameData.ownedTerritories)
+                var territoryData = mapData.GetTerritory(territory);
+                if (territoryData != null)
                 {
-                    if (territory.adjacentTerritoryIds.Contains(ownedTerritory))
+                    foreach (int ownedTerritory in bot.inGameData.ownedTerritories)
                     {
-                        adjacentTerritories.Add(territory.territoryId);
-                        break;
+                        if (territoryData.adjacentTerritories.Contains(ownedTerritory))
+                        {
+                            adjacentTerritories.Add(territory);
+                            break;
+                        }
                     }
                 }
             }
@@ -455,7 +452,7 @@ namespace BilVeFethet.Managers
             else
             {
                 // Rastgele seç
-                selectedTerritory = availableTerritories[UnityEngine.Random.Range(0, availableTerritories.Count)].territoryId;
+                selectedTerritory = availableTerritories[UnityEngine.Random.Range(0, availableTerritories.Count)];
             }
             
             GameEvents.TriggerBotTerritorySelected(bot.playerId, selectedTerritory);
@@ -487,12 +484,12 @@ namespace BilVeFethet.Managers
             
             // Sihirli Kanatlar joker kullanımı değerlendirmesi
             bool useMagicWings = false;
-            if (!bot.usedJokersThisGame.Contains(JokerType.SihirliKanatlar))
+            if (!bot.inGameData.usedJokersThisGame.Contains(JokerType.SihirliKanatlar))
             {
                 if (UnityEngine.Random.value < bot.jokerUseChance * 0.5f)
                 {
                     useMagicWings = true;
-                    bot.usedJokersThisGame.Add(JokerType.SihirliKanatlar);
+                    bot.inGameData.usedJokersThisGame.Add(JokerType.SihirliKanatlar);
                     GameEvents.TriggerJokerUsed(bot.playerId, JokerType.SihirliKanatlar);
                 }
             }
