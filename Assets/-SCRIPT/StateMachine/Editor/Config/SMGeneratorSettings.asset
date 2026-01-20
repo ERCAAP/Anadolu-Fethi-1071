@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f1a89afaab7c4230ac0773e3ac740f6, type: 3}
+  m_Name: SMGeneratorSettings
+  m_EditorClassIdentifier: 
+  _rootNamespace: AnadoluFethi
+  _defaultOutputPath: Assets/-SCRIPT
+  _minWindowSize: {x: 400, y: 500}
+  _scrollViewHeight: 200
+  _labelWidth: 80
+  _buttonSmallWidth: 30
+  _buttonHeight: 40
+  _headerFontSize: 16
+  _generateButtonColor: {r: 0.2, g: 0.8, b: 0.2, a: 1}
+  _addStateButtonColor: {r: 0.3, g: 0.6, b: 1, a: 1}
+  _removeButtonColor: {r: 1, g: 0, b: 0, a: 1}
